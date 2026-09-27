@@ -1,0 +1,12 @@
+// Dia 1: apenas a conexão configurada.
+// Os modelos (User, Event/Casamento, Gift, GiftClaim) descritos no
+// CLAUDE.md entram a partir do Dia 2, começando pelo User.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

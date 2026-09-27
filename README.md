@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# GiftCasamento
 
-## Getting Started
+Sistema de lista de presentes de casamento. Ver `CLAUDE.md` para o
+contexto completo do produto e as regras de negócio, e `CONTRIBUTING.md`
+para as convenções do time.
 
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Estrutura (monorepo)
+```
+apps/frontend/  -> Next.js — já existia, mantido como estava
+apps/backend/   -> Nest.js + Prisma — novo
+docker-compose.yml -> Postgres local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Pré-requisitos
+- Node.js 20+
+- Docker (pra rodar o Postgres local)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 1. Subir o Postgres local
+```bash
+docker compose up -d
+```
+Sobe um Postgres em `localhost:5432` (user/senha/db:
+`gift_list` / `gift_list` / `gift_casamento_dev`).
 
-## Learn More
+### 2. Backend (Nest.js + Prisma)
+```bash
+cd apps/backend
+cp .env.example .env
+npm install
+npx prisma generate
+npm run start:dev
+```
+Testar em `http://localhost:3001/health` — deve responder `{"status":"ok"}`.
 
-To learn more about Next.js, take a look at the following resources:
+### 3. Frontend (Next.js)
+```bash
+cd apps/frontend
+npm install
+npm run dev
+```
+Abrir `http://localhost:3000`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+> Front e back rodam de forma independente por enquanto — a integração
+> real (cadastro/login chamando a API) é o próximo passo do planejamento.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deploy (planejado)
+- Frontend → Vercel
+- Backend → Railway ou Render
+- Postgres → Neon ou Supabase
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Próximos passos
+Modelar `User` no Prisma, criar `POST /auth/register` e `POST /auth/login`
+no backend, e conectar as telas `apps/frontend/app/cadastro` e
+`apps/frontend/app/login`, que já existem visualmente, à API real.
