@@ -1,0 +1,36 @@
+### Extensão "REST Client" do VSCode: clique em "Send Request" acima de cada bloco.
+### Para produção, troque a linha abaixo pela URL do Render.
+@baseUrl = https://gift-casamento-frontend.vercel.app/
+
+### 1) Health check
+GET {{baseUrl}}/health
+
+### 2) Cadastro válido (deve retornar 201 + id, name, email, createdAt)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Caio Teste",
+  "email": "caio@teste.com",
+  "password": "senha12345"
+}
+
+### 3) Mesmo e-mail de novo (deve retornar 409 - e-mail já cadastrado)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Caio Teste",
+  "email": "CAIO@teste.com",
+  "password": "senha12345"
+}
+
+### 4) E-mail inválido + senha curta (deve retornar 400 com as mensagens de validação)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Caio",
+  "email": "isso-nao-e-email",
+  "password": "123"
+}
