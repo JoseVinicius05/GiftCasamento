@@ -1,6 +1,6 @@
 ### Extensão "REST Client" do VSCode: clique em "Send Request" acima de cada bloco.
 ### Para produção, troque a linha abaixo pela URL do Render.
-@baseUrl = https://gift-casamento-frontend.vercel.app/
+@baseUrl = http://localhost:3001
 
 ### 1) Health check
 GET {{baseUrl}}/health
@@ -34,3 +34,30 @@ Content-Type: application/json
   "email": "isso-nao-e-email",
   "password": "123"
 }
+
+### 5) Login válido (deve retornar 200 + accessToken + user)
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "caio@teste.com",
+  "password": "senha12345"
+}
+
+### 6) Login com senha errada (deve retornar 401 - "E-mail ou senha inválidos")
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "caio@teste.com",
+  "password": "senhaerrada"
+}
+
+### 7) /auth/me sem token (deve retornar 401 - "Token ausente")
+GET {{baseUrl}}/auth/me
+
+### 8) /auth/me com o token do login acima (deve retornar 200 + id/name/email)
+# A extensão REST Client reaproveita a resposta do bloco "login" automaticamente.
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{login.response.body.accessToken}}
