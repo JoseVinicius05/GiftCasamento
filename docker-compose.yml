@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: gift_list
       POSTGRES_DB: gift_casamento_dev
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - gift_casamento_pg_data:/var/lib/postgresql/data
 
