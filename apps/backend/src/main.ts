@@ -1,8 +1,20 @@
+// Precisa ser o primeiro import: garante que process.env.* (DATABASE_URL,
+// JWT_SECRET, etc) está preenchido antes de qualquer outro módulo ser carregado.
+import 'dotenv/config';
+
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
+  if (!process.env.JWT_SECRET) {
+    console.error(
+      'JWT_SECRET não configurado. Defina essa variável no .env (local) ou nas ' +
+        'variáveis de ambiente do serviço (produção) antes de subir o backend.',
+    );
+    process.exit(1);
+  }
+
   const app = await NestFactory.create(AppModule);
 
   // Valida todos os DTOs automaticamente e descarta campos que não existem no DTO.
