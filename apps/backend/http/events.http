@@ -1,0 +1,58 @@
+### Extensão "REST Client" do VSCode. Rode o bloco "login" primeiro —
+### os blocos de evento reaproveitam o token dele automaticamente.
+@baseUrl = http://localhost:3001
+
+### 1) Login (troque pelo e-mail/senha de uma conta que você já criou)
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "teste@gmail.com",
+  "password": "12345678"
+}
+
+### 2) Criar evento válido (deve retornar 201 com o evento, sem guestPasswordHash)
+POST {{baseUrl}}/events
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "title": "Casamento Ana & João",
+  "eventType": "casamento",
+  "eventDate": "2027-03-14",
+  "guestPassword": "convidados123",
+  "pixKey": "ana.joao@example.com"
+}
+
+### 3) Criar evento sem token (deve retornar 401 - "Token ausente")
+POST {{baseUrl}}/events
+Content-Type: application/json
+
+{
+  "title": "Evento sem login",
+  "eventType": "aniversario",
+  "eventDate": "2027-01-01",
+  "guestPassword": "1234",
+  "pixKey": "chave@example.com"
+}
+
+### 4) Criar evento com dados inválidos (deve retornar 400 com as mensagens)
+POST {{baseUrl}}/events
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "title": "",
+  "eventType": "tipo-que-nao-existe",
+  "eventDate": "data-invalida",
+  "guestPassword": "123",
+  "pixKey": ""
+}
+
+### 5) Listar meus eventos (deve retornar 200 com array, incluindo o criado no bloco 2)
+GET {{baseUrl}}/events
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 6) Listar sem token (deve retornar 401)
+GET {{baseUrl}}/events

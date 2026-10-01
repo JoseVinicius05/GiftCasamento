@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { TOKEN_COOKIE } from '../../lib/auth-cookie';
 import LogoutButton from './LogoutButton';
@@ -34,6 +35,12 @@ export default async function DashboardPage() {
         <p className="text-sm text-gray-400 mt-6">
           Esta página confirma que cadastro → login → /auth/me estão funcionando.
         </p>
+        <Link
+          href="/meus-eventos"
+          className="mt-4 block font-semibold text-pink-500 hover:underline"
+        >
+          Ver meus eventos
+        </Link>
         <div className="mt-6">
           <LogoutButton />
         </div>

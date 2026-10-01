@@ -5,7 +5,7 @@ import { TOKEN_COOKIE } from './lib/auth-cookie';
 // sozinho (fallback de segurança), mas o middleware é quem barra o acesso
 // antes mesmo da página carregar. Conforme novas telas autenticadas forem
 // criadas (painel do evento, etc.), é só adicionar o prefixo aqui.
-const PROTECTED_PATHS = ['/dashboard'];
+const PROTECTED_PATHS = ['/dashboard', '/criar-casamento', '/meus-eventos', '/eventos'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -29,5 +29,5 @@ export function middleware(request: NextRequest) {
 // O matcher decide em quais requisições o middleware roda — evita rodar em
 // toda imagem/asset estático, só nas rotas que interessam.
 export const config = {
-  matcher: ['/dashboard/:path*'],
+  matcher: ['/dashboard/:path*', '/criar-casamento', '/meus-eventos/:path*', '/eventos/:path*'],
 };

@@ -17,5 +17,10 @@ import { JwtAuthGuard } from './jwt-auth.guard';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard],
+  // Exporta JwtModule (não só o guard) porque o JwtAuthGuard depende do
+  // JwtService por baixo — sem re-exportar o módulo que o fornece, o Nest
+  // não consegue resolver essa dependência em outros módulos (como o
+  // EventsModule) que só importam o AuthModule.
+  exports: [JwtModule, JwtAuthGuard],
 })
 export class AuthModule {}
