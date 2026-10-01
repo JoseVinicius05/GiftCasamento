@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { TOKEN_COOKIE } from '../api/login/route';
+import { TOKEN_COOKIE } from '../../lib/auth-cookie';
 import LogoutButton from './LogoutButton';
 
 // Página de teste do Dia 3: só existe pra provar que login + JWT + rota

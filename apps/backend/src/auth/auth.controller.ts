@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -24,6 +25,9 @@ export class AuthController {
     return this.authService.register(dto);
   }
 
+  // Rate limit (ThrottlerModule configurado no AuthModule): no máximo 5
+  // tentativas de login por IP a cada 60s, pra dificultar força bruta.
+  @UseGuards(ThrottlerGuard)
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto) {

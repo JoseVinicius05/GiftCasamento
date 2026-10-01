@@ -1,8 +1,5 @@
 import { NextResponse } from 'next/server';
-
-// Nome do cookie httpOnly que guarda o JWT no domínio do frontend.
-// httpOnly = JavaScript no navegador não consegue ler (evita roubo via XSS).
-export const TOKEN_COOKIE = 'gift_casamento_token';
+import { TOKEN_COOKIE } from '../../../lib/auth-cookie';
 
 export async function POST(request: Request) {
   const body = await request.json();
