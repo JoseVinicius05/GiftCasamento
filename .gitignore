@@ -13,6 +13,7 @@ apps/frontend/.next/
 apps/frontend/out/
 apps/frontend/next-env.d.ts
 apps/frontend/*.tsbuildinfo
+.next/
 
 # nest.js / prisma (apps/backend)
 apps/backend/dist/
