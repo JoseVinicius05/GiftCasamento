@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { EventsController } from './events.controller';
 import { EventsService } from './events.service';
 
-// Ainda sem controller: o Dia 1 só pede a geração do slug único.
-// POST /events (e o resto do CRUD) entra no Dia 2.
 @Module({
+  // Precisa do AuthModule pra ter acesso ao JwtAuthGuard usado no controller.
+  imports: [AuthModule],
+  controllers: [EventsController],
   providers: [EventsService],
   exports: [EventsService],
 })

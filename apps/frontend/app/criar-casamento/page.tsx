@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 function gerarSlug(texto: string) {
@@ -24,23 +25,24 @@ const EVENT_TYPES = [
 type EventType = (typeof EVENT_TYPES)[number]["value"] | "";
 
 export default function CriarCasamentoPage() {
+  const router = useRouter();
   const [eventType, setEventType] = useState<EventType>("");
   const [title, setTitle] = useState("");
+  const [eventDate, setEventDate] = useState("");
   const [slug, setSlug] = useState("");
   const [pixKey, setPixKey] = useState("");
   const [guestPassword, setGuestPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [validated, setValidated] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   function handleTitleChange(valor: string) {
     setTitle(valor);
     setSlug(gerarSlug(valor));
   }
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
-    setValidated(false);
 
     if (!eventType) {
       setError("Escolha o tipo do evento.");
@@ -48,6 +50,10 @@ export default function CriarCasamentoPage() {
     }
     if (!title.trim()) {
       setError("Dê um título para o seu evento.");
+      return;
+    }
+    if (!eventDate) {
+      setError("Escolha a data do evento.");
       return;
     }
     if (!pixKey.trim()) {
@@ -59,9 +65,31 @@ export default function CriarCasamentoPage() {
       return;
     }
 
-    // Ainda sem integração real com o backend — isso é o próximo passo (Dia 2),
-    // quando o POST /events existir de verdade e o slug único vier do servidor.
-    setValidated(true);
+    setLoading(true);
+    try {
+      const response = await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, eventType, eventDate, guestPassword, pixKey }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          router.push("/login?redirectTo=/criar-casamento");
+          return;
+        }
+        const message = Array.isArray(data.message) ? data.message[0] : data.message;
+        setError(message ?? "Não foi possível criar o evento.");
+        return;
+      }
+
+      router.push("/meus-eventos");
+    } catch {
+      setError("Não foi possível conectar ao servidor. Tente novamente em instantes.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -91,12 +119,6 @@ export default function CriarCasamentoPage() {
             {error && (
               <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
                 {error}
-              </div>
-            )}
-
-            {validated && (
-              <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                Tudo certo por aqui! A criação de verdade do evento chega no próximo passo do desenvolvimento.
               </div>
             )}
 
@@ -153,12 +175,14 @@ export default function CriarCasamentoPage() {
                 htmlFor="date"
                 className="mb-2 block text-sm font-semibold text-gray-700"
               >
-                Data do casamento
+                Data do evento
               </label>
 
               <input
                 id="date"
                 type="date"
+                value={eventDate}
+                onChange={(e) => setEventDate(e.target.value)}
                 className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100 text-gray-800"
               />
             </div>
@@ -258,9 +282,10 @@ export default function CriarCasamentoPage() {
             {/* Botão */}
             <button
               type="submit"
-              className="w-full rounded-xl bg-pink-500 px-6 py-4 font-semibold text-white transition hover:bg-pink-600"
+              disabled={loading}
+              className="w-full rounded-xl bg-pink-500 px-6 py-4 font-semibold text-white transition hover:bg-pink-600 disabled:opacity-50"
             >
-              Criar meu casamento
+              {loading ? "Criando evento..." : "Criar meu evento"}
             </button>
           </form>
         </section>
