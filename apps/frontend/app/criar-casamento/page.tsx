@@ -11,24 +11,57 @@ function gerarSlug(texto: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+// Mesmos valores do enum EventType no Prisma — se adicionar um tipo novo,
+// precisa espelhar aqui e no schema.prisma.
+const EVENT_TYPES = [
+  { value: "casamento", label: "Casamento" },
+  { value: "aniversario", label: "Aniversário" },
+  { value: "cha_de_bebe", label: "Chá de bebê" },
+  { value: "cha_de_cozinha", label: "Chá de cozinha" },
+  { value: "outro", label: "Outro" },
+] as const;
+
+type EventType = (typeof EVENT_TYPES)[number]["value"] | "";
+
 export default function CriarCasamentoPage() {
-  const [nome1, setNome1] = useState("");
-  const [nome2, setNome2] = useState("");
+  const [eventType, setEventType] = useState<EventType>("");
+  const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
+  const [pixKey, setPixKey] = useState("");
+  const [guestPassword, setGuestPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [validated, setValidated] = useState(false);
 
-  function atualizarSlug(nome1Novo: string, nome2Novo: string) {
-    const nomes = `${nome1Novo} e ${nome2Novo}`.trim();
-    setSlug(gerarSlug(nomes));
+  function handleTitleChange(valor: string) {
+    setTitle(valor);
+    setSlug(gerarSlug(valor));
   }
 
-  function handleNome1Change(valor: string) {
-    setNome1(valor);
-    atualizarSlug(valor, nome2);
-  }
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setValidated(false);
 
-  function handleNome2Change(valor: string) {
-    setNome2(valor);
-    atualizarSlug(nome1, valor);
+    if (!eventType) {
+      setError("Escolha o tipo do evento.");
+      return;
+    }
+    if (!title.trim()) {
+      setError("Dê um título para o seu evento.");
+      return;
+    }
+    if (!pixKey.trim()) {
+      setError("Informe sua chave Pix — ela é usada pra gerar o QR code dos presentes.");
+      return;
+    }
+    if (guestPassword.trim().length < 4) {
+      setError("A senha dos convidados precisa ter pelo menos 4 caracteres.");
+      return;
+    }
+
+    // Ainda sem integração real com o backend — isso é o próximo passo (Dia 2),
+    // quando o POST /events existir de verdade e o slug único vier do servidor.
+    setValidated(true);
   }
 
   return (
@@ -42,7 +75,7 @@ export default function CriarCasamentoPage() {
           </p>
 
           <h1 className="mt-3 text-4xl font-bold text-gray-800">
-            Crie sua página de casamento
+            Crie a página do seu evento
           </h1>
 
           <p className="mt-3 text-gray-500">
@@ -53,35 +86,65 @@ export default function CriarCasamentoPage() {
         {/* Formulário */}
         <section className="rounded-3xl bg-white p-6 shadow-sm md:p-10">
 
-          <form className="space-y-7">
+          <form className="space-y-7" onSubmit={handleSubmit}>
 
-            {/* Nomes */}
+            {error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                {error}
+              </div>
+            )}
+
+            {validated && (
+              <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                Tudo certo por aqui! A criação de verdade do evento chega no próximo passo do desenvolvimento.
+              </div>
+            )}
+
+            {/* Tipo de evento */}
             <div>
-              <label className="mb-3 block text-sm font-semibold text-gray-700">
-                Nomes dos noivos
+              <label
+                htmlFor="eventType"
+                className="mb-2 block text-sm font-semibold text-gray-700"
+              >
+                Tipo de evento
               </label>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <input
-                    type="text"
-                    value={nome1}
-                    onChange={(e) => handleNome1Change(e.target.value)}
-                    placeholder="Primeiro nome"
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100 text-gray-800"
-                  />
-                </div>
+              <select
+                id="eventType"
+                value={eventType}
+                onChange={(e) => setEventType(e.target.value as EventType)}
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-800 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+              >
+                <option value="">Selecione...</option>
+                {EVENT_TYPES.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-                <div>
-                  <input
-                    type="text"
-                    value={nome2}
-                    onChange={(e) => handleNome2Change(e.target.value)}
-                    placeholder="Segundo nome"
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100 text-gray-800"
-                  />
-                </div>
-              </div>
+            {/* Título */}
+            <div>
+              <label
+                htmlFor="title"
+                className="mb-2 block text-sm font-semibold text-gray-700"
+              >
+                Título do evento
+              </label>
+
+              <input
+                id="title"
+                type="text"
+                value={title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                placeholder="Ex.: Ana & João, Aniversário de 30 anos da Marina..."
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100 text-gray-800"
+              />
+
+              <p className="mt-2 text-xs text-gray-400">
+                É isso que os convidados vão ver no topo da sua página.
+              </p>
             </div>
 
             {/* Data */}
@@ -100,58 +163,53 @@ export default function CriarCasamentoPage() {
               />
             </div>
 
-            {/* Cidade */}
+            {/* Chave Pix — sempre obrigatória. Qualquer presente pode ser pago
+                via Pix (integral ou por cota); o link da loja é um dado de
+                cada presente, não uma escolha do evento. */}
             <div>
               <label
-                htmlFor="city"
+                htmlFor="pixKey"
                 className="mb-2 block text-sm font-semibold text-gray-700"
               >
-                Cidade
+                Sua chave Pix
               </label>
 
               <input
-                id="city"
+                id="pixKey"
                 type="text"
-                placeholder="Ex.: Campo Mourão - PR"
+                value={pixKey}
+                onChange={(e) => setPixKey(e.target.value)}
+                placeholder="CPF, e-mail, telefone ou chave aleatória"
                 className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100 text-gray-800"
-              />
-            </div>
-
-            {/* Mensagem */}
-            <div>
-              <label
-                htmlFor="message"
-                className="mb-2 block text-sm font-semibold text-gray-700"
-              >
-                Mensagem para os convidados
-              </label>
-
-              <textarea
-                id="message"
-                rows={5}
-                placeholder="Ex.: Estamos muito felizes em compartilhar esse momento com vocês!"
-                className="w-full resize-none rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100 text-gray-800"
-              />
-            </div>
-
-            {/* Foto */}
-            <div>
-              <label
-                htmlFor="photo"
-                className="mb-2 block text-sm font-semibold text-gray-700"
-              >
-                Foto do casal
-              </label>
-
-              <input
-                id="photo"
-                type="file"
-                accept="image/*"
-                className="block w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-600"
               />
 
               <p className="mt-2 text-xs text-gray-400">
-                JPG, PNG ou WEBP.
+                Usada pra gerar o QR code com o valor certo quando um convidado
+                for pagar um presente (integral ou por cota).
+              </p>
+            </div>
+
+            {/* Senha do convidado */}
+            <div>
+              <label
+                htmlFor="guestPassword"
+                className="mb-2 block text-sm font-semibold text-gray-700"
+              >
+                Senha de acesso dos convidados
+              </label>
+
+              <input
+                id="guestPassword"
+                type="text"
+                value={guestPassword}
+                onChange={(e) => setGuestPassword(e.target.value)}
+                placeholder="Uma senha simples pra compartilhar com os convidados"
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100 text-gray-800"
+              />
+
+              <p className="mt-2 text-xs text-gray-400">
+                Não precisa ser complexa — é só pra impedir acesso de quem não foi convidado.
+                Você vai compartilhar ela junto com o link da sua página.
               </p>
             </div>
 
@@ -180,7 +238,8 @@ export default function CriarCasamentoPage() {
               </div>
 
               <p className="mt-2 text-xs text-gray-400">
-                Esse será o link que você compartilhará com seus convidados.
+                Esse é só um preview — o endereço final ganha um código extra do
+                servidor pra garantir que não existe outro igual.
               </p>
             </div>
 

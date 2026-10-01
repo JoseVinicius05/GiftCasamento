@@ -15,5 +15,37 @@ model User {
   passwordHash String   @map("password_hash")
   createdAt    DateTime @default(now()) @map("created_at")
 
+  events Event[]
+
   @@map("users")
+}
+
+enum EventType {
+  casamento
+  aniversario
+  cha_de_bebe
+  cha_de_cozinha
+  outro
+}
+
+model Event {
+  id                String      @id @default(uuid())
+  ownerId           String      @map("owner_id")
+  owner             User        @relation(fields: [ownerId], references: [id])
+  eventType         EventType   @map("event_type")
+  title             String
+  eventDate         DateTime    @map("event_date")
+  // Gerado pelo backend (título + sufixo aleatório), nunca escolhido
+  // manualmente pelo dono — evita o retrabalho de "esse endereço já existe".
+  slug              String      @unique
+  guestPasswordHash String      @map("guest_password_hash")
+  // Sempre obrigatória: qualquer presente pode ser pago via Pix (integral ou
+  // por cota), independente de ter link de loja ou não. É usada pra gerar o
+  // QR code com o valor certo na hora da reivindicação/contribuição.
+  // O link da loja NÃO é uma escolha do evento — é um dado de cada Gift
+  // (product_url), e o convidado decide ali como quer pagar.
+  pixKey            String      @map("pix_key")
+  createdAt         DateTime    @default(now()) @map("created_at")
+
+  @@map("events")
 }
