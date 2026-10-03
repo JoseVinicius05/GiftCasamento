@@ -89,7 +89,7 @@ export default function CadastroPage() {
               onChange={(e) => setName(e.target.value)}
               required
               className="w-full px-4 py-3 border border-gray-300 rounded-lg
-                         outline-none focus:ring-2 focus:ring-pink-400"
+                         outline-none text-black focus:ring-2 focus:ring-pink-400"
             />
           </div>
 
@@ -110,7 +110,7 @@ export default function CadastroPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               className="w-full px-4 py-3 border border-gray-300 rounded-lg
-                         outline-none focus:ring-2 focus:ring-pink-400"
+                         outline-none text-black focus:ring-2 focus:ring-pink-400"
             />
           </div>
 
@@ -118,7 +118,7 @@ export default function CadastroPage() {
           <div>
             <label
               htmlFor="password"
-              className="block text-sm font-medium text-gray-700 mb-2"
+              className="block text-sm font-medium text-gray-700  mb-2"
             >
               Senha
             </label>
@@ -132,7 +132,7 @@ export default function CadastroPage() {
               required
               minLength={8}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg
-                         outline-none focus:ring-2 focus:ring-pink-400"
+                         outline-none text-black focus:ring-2 focus:ring-pink-400"
             />
           </div>
 
@@ -154,12 +154,12 @@ export default function CadastroPage() {
               required
               minLength={8}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg
-                         outline-none focus:ring-2 focus:ring-pink-400"
+                         outline-none text-black focus:ring-2 focus:ring-pink-400"
             />
           </div>
 
           {/* Termos */}
-          <div className="flex items-start gap-3 text-sm text-gray-600">
+          <div className="flex items-start gap-3 text-sm text-black">
             <input
               id="terms"
               type="checkbox"
