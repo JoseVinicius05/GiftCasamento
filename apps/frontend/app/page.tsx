@@ -105,10 +105,38 @@ export default function Home() {
             </Link>
 
             <Link
-              href="/login "
-              className="rounded-full bg-[#2d2926] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#46403b]"
+              href="/login"
+              className="
+    group relative overflow-hidden
+    rounded-full
+    bg-[#2d2926]
+    px-7 py-4
+    text-center
+    font-medium text-white
+    shadow-lg shadow-black/10
+    transition-all duration-300
+    hover:-translate-y-1
+    hover:bg-[#46403b]
+    hover:shadow-xl
+    active:scale-95
+  "
             >
-              Criar evento
+              <span
+                className="
+                absolute inset-0
+                -translate-x-full
+                bg-gradient-to-r
+                from-transparent
+                via-white/20
+                to-transparent
+                transition-transform duration-700
+                group-hover:translate-x-full"
+              />
+
+              <span className="relative flex items-center justify-center gap-2">
+                ✨
+                Criar meu evento
+              </span>
             </Link>
           </div>
         </div>
