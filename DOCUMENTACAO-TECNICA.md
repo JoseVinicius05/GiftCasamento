@@ -1,4 +1,4 @@
-# Documentação Técnica — GiftCasamento
+# Documentação Técnica — WebGift
 
 Este documento explica, em detalhe, o que cada arquivo do backend e do
 frontend faz e como eles se conectam entre si. A ideia é que qualquer
@@ -44,7 +44,7 @@ nenhuma, e o dashboard já roda no servidor do Next, então não tem
 ## 2. Estrutura de pastas
 
 ```
-GiftCasamento/
+WebGift/ (pasta do repositório; o nome ainda pode mudar, ver nota abaixo)
 ├── apps/
 │   ├── backend/            → API em Nest.js
 │   │   ├── prisma/

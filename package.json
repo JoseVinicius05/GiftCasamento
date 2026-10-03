@@ -1,5 +1,5 @@
 {
-  "name": "gift-casamento",
+  "name": "webgift",
   "private": true,
   "workspaces": [
     "apps/*"
@@ -8,8 +8,5 @@
     "dev:frontend": "npm run dev --workspace=apps/frontend",
     "dev:backend": "npm run start:dev --workspace=apps/backend",
     "lint": "npm run lint --workspace=apps/frontend && npm run lint --workspace=apps/backend"
-  },
-  "dependencies": {
-    "swiper": "^14.3.0"
   }
 }

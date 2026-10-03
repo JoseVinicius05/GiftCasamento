@@ -56,3 +56,31 @@ Authorization: Bearer {{login.response.body.accessToken}}
 
 ### 6) Listar sem token (deve retornar 401)
 GET {{baseUrl}}/events
+
+### 7) Ver um evento específico pelo slug (troque pelo slug real retornado no bloco 2)
+# @name getOne
+GET {{baseUrl}}/events/casamento-ana-joao-b087q
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 8) Editar título e chave Pix (deve retornar 200 com os campos atualizados)
+PATCH {{baseUrl}}/events/casamento-ana-joao-b087q
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "title": "Casamento Ana & João - Atualizado",
+  "pixKey": "novachave@example.com"
+}
+
+### 9) Tentar ver/editar um slug que não existe (deve retornar 404 nos dois casos)
+GET {{baseUrl}}/events/slug-que-nao-existe-123
+Authorization: Bearer {{login.response.body.accessToken}}
+
+###
+PATCH {{baseUrl}}/events/slug-que-nao-existe-123
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "title": "Não deveria funcionar"
+}

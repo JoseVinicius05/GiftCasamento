@@ -1,11 +1,12 @@
+import { NotFoundException } from '@nestjs/common';
 import { EventsService } from './events.service';
 
 describe('EventsService', () => {
-  let prisma: { event: { findUnique: jest.Mock } };
+  let prisma: { event: { findUnique: jest.Mock; update: jest.Mock } };
   let service: EventsService;
 
   beforeEach(() => {
-    prisma = { event: { findUnique: jest.fn() } };
+    prisma = { event: { findUnique: jest.fn(), update: jest.fn() } };
     service = new EventsService(prisma as any);
   });
 
@@ -42,5 +43,80 @@ describe('EventsService', () => {
     const slug = await service.generateUniqueSlug('!!!');
 
     expect(slug).toMatch(/^evento-[a-z0-9]{5}$/);
+  });
+
+  describe('findBySlugForOwner (checagem de ownership)', () => {
+    it('lança NotFoundException se o slug não existe', async () => {
+      prisma.event.findUnique.mockResolvedValue(null);
+
+      await expect(service.findBySlugForOwner('nao-existe', 'dono-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('lança NotFoundException (não 403) se o evento pertence a outro dono', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'evt-1',
+        slug: 'casamento-x7k2',
+        ownerId: 'dono-2',
+      });
+
+      // dono-1 tentando acessar um evento de dono-2 — mesmo erro de "não existe",
+      // pra não revelar que o slug pertence a outra pessoa.
+      await expect(service.findBySlugForOwner('casamento-x7k2', 'dono-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('retorna o evento, sem o ownerId, quando o dono bate', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'evt-1',
+        slug: 'casamento-x7k2',
+        title: 'Casamento Ana & João',
+        ownerId: 'dono-1',
+      });
+
+      const event = await service.findBySlugForOwner('casamento-x7k2', 'dono-1');
+
+      expect(event).toEqual({ id: 'evt-1', slug: 'casamento-x7k2', title: 'Casamento Ana & João' });
+      expect(event).not.toHaveProperty('ownerId');
+    });
+  });
+
+  describe('update', () => {
+    it('não chama prisma.event.update se o dono não bate (ownership falha antes)', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'evt-1',
+        slug: 'casamento-x7k2',
+        ownerId: 'dono-2',
+      });
+
+      await expect(
+        service.update('casamento-x7k2', { title: 'Hackeado' }, 'dono-1'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(prisma.event.update).not.toHaveBeenCalled();
+    });
+
+    it('atualiza só os campos enviados, quando o dono bate', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'evt-1',
+        slug: 'casamento-x7k2',
+        ownerId: 'dono-1',
+      });
+      prisma.event.update.mockResolvedValue({
+        id: 'evt-1',
+        slug: 'casamento-x7k2',
+        title: 'Novo título',
+      });
+
+      await service.update('casamento-x7k2', { title: 'Novo título' }, 'dono-1');
+
+      expect(prisma.event.update).toHaveBeenCalledWith({
+        where: { slug: 'casamento-x7k2' },
+        data: { title: 'Novo título' },
+        select: expect.any(Object),
+      });
+    });
   });
 });

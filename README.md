@@ -1,4 +1,4 @@
-# GiftCasamento
+# WebGift
 
 Sistema de lista de presentes de casamento. Ver `CLAUDE.md` para o
 contexto completo do produto e as regras de negócio, `CONTRIBUTING.md`

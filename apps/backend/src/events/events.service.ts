@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
+import { UpdateEventDto } from './dto/update-event.dto';
 import { randomSuffix, slugifyTitle } from './slug.util';
 
 const MAX_SLUG_ATTEMPTS = 5;
@@ -45,6 +46,40 @@ export class EventsService {
     return this.prisma.event.findMany({
       where: { ownerId },
       orderBy: { createdAt: 'desc' },
+      select: PUBLIC_EVENT_FIELDS,
+    });
+  }
+
+  // Usado tanto pelo GET quanto pelo PATCH de um evento específico.
+  // Retorna 404 — nunca 403 — tanto se o slug não existe quanto se existe
+  // mas pertence a outro dono. Isso evita que alguém descubra, por
+  // tentativa e erro, quais slugs existem no sistema mas não são dele.
+  async findBySlugForOwner(slug: string, ownerId: string) {
+    const event = await this.prisma.event.findUnique({
+      where: { slug },
+      select: { ...PUBLIC_EVENT_FIELDS, ownerId: true },
+    });
+
+    if (!event || event.ownerId !== ownerId) {
+      throw new NotFoundException('Evento não encontrado');
+    }
+
+    const { ownerId: _ownerId, ...publicEvent } = event;
+    return publicEvent;
+  }
+
+  async update(slug: string, dto: UpdateEventDto, ownerId: string) {
+    // Garante ownership antes de editar — reaproveita a mesma checagem da leitura.
+    await this.findBySlugForOwner(slug, ownerId);
+
+    return this.prisma.event.update({
+      where: { slug },
+      data: {
+        ...(dto.title !== undefined && { title: dto.title }),
+        ...(dto.eventType !== undefined && { eventType: dto.eventType }),
+        ...(dto.eventDate !== undefined && { eventDate: new Date(dto.eventDate) }),
+        ...(dto.pixKey !== undefined && { pixKey: dto.pixKey }),
+      },
       select: PUBLIC_EVENT_FIELDS,
     });
   }
