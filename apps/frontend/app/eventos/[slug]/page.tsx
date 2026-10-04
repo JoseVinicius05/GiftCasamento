@@ -36,18 +36,49 @@ export default async function PainelEventoPage({
   }
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  const response = await fetch(`${apiUrl}/events/${slug}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl}/events/${slug}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+  } catch {
+    // Backend fora do ar ou inacessível — isso é diferente de "não existe",
+    // então mostramos um erro de verdade em vez de mandar pro /meus-eventos
+    // como se o evento não existisse.
+    return (
+      <main className="min-h-screen bg-[#fff8fb] px-4 py-10">
+        <div className="mx-auto max-w-2xl rounded-2xl bg-white p-10 text-center shadow-sm">
+          <h1 className="text-xl font-bold text-gray-800">Não foi possível carregar o evento</h1>
+          <p className="mt-2 text-gray-500">
+            Não conseguimos falar com o servidor agora. Tente novamente em instantes.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
-  // 401 (token inválido/expirado) ou 404 (não existe ou não é seu) —
-  // nos dois casos a pessoa não tem o que ver aqui.
+  // 401 (token inválido/expirado): manda pro login.
   if (response.status === 401) {
     redirect(`/login?redirectTo=/eventos/${slug}`);
   }
-  if (!response.ok) {
+  // 404 (não existe ou não é seu): manda pra lista, sem revelar qual dos dois.
+  if (response.status === 404) {
     redirect('/meus-eventos');
+  }
+  // Qualquer outro erro (5xx, etc.) é um problema de servidor de verdade —
+  // mostra mensagem em vez de redirecionar como se o evento não existisse.
+  if (!response.ok) {
+    return (
+      <main className="min-h-screen bg-[#fff8fb] px-4 py-10">
+        <div className="mx-auto max-w-2xl rounded-2xl bg-white p-10 text-center shadow-sm">
+          <h1 className="text-xl font-bold text-gray-800">Algo deu errado</h1>
+          <p className="mt-2 text-gray-500">
+            Não foi possível carregar os dados do evento. Tente novamente em instantes.
+          </p>
+        </div>
+      </main>
+    );
   }
 
   const event: Event = await response.json();

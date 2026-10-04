@@ -59,11 +59,11 @@ GET {{baseUrl}}/events
 
 ### 7) Ver um evento específico pelo slug (troque pelo slug real retornado no bloco 2)
 # @name getOne
-GET {{baseUrl}}/events/casamento-ana-joao-b087q
+GET {{baseUrl}}/events/COLE_O_SLUG_AQUI
 Authorization: Bearer {{login.response.body.accessToken}}
 
 ### 8) Editar título e chave Pix (deve retornar 200 com os campos atualizados)
-PATCH {{baseUrl}}/events/casamento-ana-joao-b087q
+PATCH {{baseUrl}}/events/COLE_O_SLUG_AQUI
 Content-Type: application/json
 Authorization: Bearer {{login.response.body.accessToken}}
 
@@ -83,4 +83,43 @@ Authorization: Bearer {{login.response.body.accessToken}}
 
 {
   "title": "Não deveria funcionar"
+}
+
+### 10) Criar evento com data no passado (deve retornar 400 - "não pode ser no passado")
+POST {{baseUrl}}/events
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "title": "Evento no passado",
+  "eventType": "aniversario",
+  "eventDate": "2020-01-01",
+  "guestPassword": "1234",
+  "pixKey": "chave@example.com"
+}
+
+### 11) Verificar senha de convidado — correta (deve retornar 200, { "valid": true })
+### Pública: sem Authorization. Troque pelo slug do evento criado no bloco 2
+### e pela senha de convidado que você usou lá ("convidados123").
+POST {{baseUrl}}/events/casamento-ana-joao-b087q/access
+Content-Type: application/json
+
+{
+  "password": "convidados123"
+}
+
+### 12) Verificar senha de convidado — errada (deve retornar 401 - "Senha incorreta")
+POST {{baseUrl}}/events/COLE_O_SLUG_AQUI/access
+Content-Type: application/json
+
+{
+  "password": "senha-errada"
+}
+
+### 13) Verificar senha de convidado — slug que não existe (deve retornar 404)
+POST {{baseUrl}}/events/slug-que-nao-existe-123/access
+Content-Type: application/json
+
+{
+  "password": "qualquer"
 }

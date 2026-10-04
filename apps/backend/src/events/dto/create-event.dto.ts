@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import { EventType } from '@prisma/client';
 import { IsDateString, IsEnum, IsNotEmpty, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsNotPastDate } from '../is-not-past-date.validator';
 
 export class CreateEventDto {
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
@@ -15,6 +16,7 @@ export class CreateEventDto {
   eventType: EventType;
 
   @IsDateString({}, { message: 'Data do evento inválida' })
+  @IsNotPastDate()
   eventDate: string;
 
   @IsString({ message: 'Senha de convidado inválida' })

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -82,6 +82,26 @@ export class EventsService {
       },
       select: PUBLIC_EVENT_FIELDS,
     });
+  }
+
+  // Rota pública (sem JWT) — convidados não têm conta. Só confere a senha,
+  // não gera sessão/token de convidado ainda (isso é a Sprint 4).
+  async verifyGuestAccess(slug: string, password: string) {
+    const event = await this.prisma.event.findUnique({
+      where: { slug },
+      select: { guestPasswordHash: true },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Evento não encontrado');
+    }
+
+    const isValid = await bcrypt.compare(password, event.guestPasswordHash);
+    if (!isValid) {
+      throw new UnauthorizedException('Senha incorreta');
+    }
+
+    return { valid: true };
   }
 
   // Gera um slug único a partir do título, tipo "casamento-ana-joao-x7k2".
