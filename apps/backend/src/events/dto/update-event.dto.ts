@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import { EventType } from '@prisma/client';
 import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNotPastDate } from '../is-not-past-date.validator';
 
 // Tudo opcional: o dono pode editar só o que quiser, sem reenviar o formulário
 // inteiro. guestPassword NÃO entra aqui de propósito — trocar a senha dos
@@ -20,6 +21,7 @@ export class UpdateEventDto {
 
   @IsOptional()
   @IsDateString({}, { message: 'Data do evento inválida' })
+  @IsNotPastDate()
   eventDate?: string;
 
   @IsOptional()

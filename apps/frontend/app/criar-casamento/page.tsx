@@ -141,6 +141,10 @@ export default function CriarCasamentoPage() {
       setError("Escolha a data do evento.");
       return;
     }
+    if (eventDate < new Date().toISOString().slice(0, 10)) {
+      setError("A data do evento não pode ser no passado.");
+      return;
+    }
 
     if (!pixKey.trim()) {
       setError(
@@ -751,13 +755,18 @@ export default function CriarCasamentoPage() {
                         currentMonth.getMonth() === today.getMonth() &&
                         currentMonth.getFullYear() === today.getFullYear();
 
+                      const isPast = dateString < today.toISOString().slice(0, 10);
+
                       return (
                         <button
                           key={index}
                           type="button"
-                          onClick={() => selectDate(day)}
+                          disabled={isPast}
+                          onClick={() => !isPast && selectDate(day)}
                           className={`relative flex h-10 items-center justify-center rounded-xl text-sm transition-all duration-200
-                ${selected
+                ${isPast
+                              ? "cursor-not-allowed text-gray-300"
+                              : selected
                               ? "bg-[#c4777d] font-semibold text-white shadow-md"
                               : "text-gray-700 hover:bg-[#f3e2e1] hover:text-[#b47b7f]"
                             }

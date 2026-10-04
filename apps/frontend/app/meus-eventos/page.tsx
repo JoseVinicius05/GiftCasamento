@@ -61,15 +61,41 @@ export default async function MeusEventosPage() {
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
-  const response = await fetch(`${apiUrl}/events`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl}/events`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    });
+  } catch {
+    return (
+      <main className="min-h-screen bg-[#fff8fb] px-4 py-10">
+        <div className="mx-auto max-w-2xl rounded-2xl bg-white p-10 text-center shadow-sm">
+          <h1 className="text-xl font-bold text-gray-800">Não foi possível carregar seus eventos</h1>
+          <p className="mt-2 text-gray-500">
+            Não conseguimos falar com o servidor agora. Tente novamente em instantes.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
-  if (!response.ok) {
+  if (response.status === 401) {
     redirect("/login?redirectTo=/meus-eventos");
+  }
+  if (!response.ok) {
+    return (
+      <main className="min-h-screen bg-[#fff8fb] px-4 py-10">
+        <div className="mx-auto max-w-2xl rounded-2xl bg-white p-10 text-center shadow-sm">
+          <h1 className="text-xl font-bold text-gray-800">Algo deu errado</h1>
+          <p className="mt-2 text-gray-500">
+            Não foi possível carregar seus eventos. Tente novamente em instantes.
+          </p>
+        </div>
+      </main>
+    );
   }
 
   const events: Event[] = await response.json();

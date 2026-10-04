@@ -1,4 +1,5 @@
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
 import { EventsService } from './events.service';
 
 describe('EventsService', () => {
@@ -117,6 +118,34 @@ describe('EventsService', () => {
         data: { title: 'Novo título' },
         select: expect.any(Object),
       });
+    });
+  });
+
+  describe('verifyGuestAccess', () => {
+    it('lança NotFoundException se o slug não existe', async () => {
+      prisma.event.findUnique.mockResolvedValue(null);
+
+      await expect(service.verifyGuestAccess('nao-existe', '1234')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('lança UnauthorizedException com a senha errada', async () => {
+      const guestPasswordHash = await bcrypt.hash('senhacerta', 10);
+      prisma.event.findUnique.mockResolvedValue({ guestPasswordHash });
+
+      await expect(service.verifyGuestAccess('casamento-x7k2', 'senhaerrada')).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('retorna { valid: true } com a senha correta', async () => {
+      const guestPasswordHash = await bcrypt.hash('senhacerta', 10);
+      prisma.event.findUnique.mockResolvedValue({ guestPasswordHash });
+
+      const result = await service.verifyGuestAccess('casamento-x7k2', 'senhacerta');
+
+      expect(result).toEqual({ valid: true });
     });
   });
 });

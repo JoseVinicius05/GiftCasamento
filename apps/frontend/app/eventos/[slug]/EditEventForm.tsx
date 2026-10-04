@@ -52,6 +52,10 @@ export default function EditEventForm({
       setError('O título não pode ficar vazio.');
       return;
     }
+    if (eventDate < new Date().toISOString().slice(0, 10)) {
+      setError('A data do evento não pode ser no passado.');
+      return;
+    }
     if (!pixKey.trim()) {
       setError('A chave Pix não pode ficar vazia.');
       return;
@@ -139,6 +143,7 @@ export default function EditEventForm({
         <input
           id="edit-date"
           type="date"
+          min={new Date().toISOString().slice(0, 10)}
           value={eventDate}
           onChange={(e) => setEventDate(e.target.value)}
           className="w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-800 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
