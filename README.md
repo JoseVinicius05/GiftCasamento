@@ -69,9 +69,31 @@ Abrir `http://localhost:3000`.
 cd apps/backend
 npm test
 ```
-Cobre as regras do `AuthService`: e-mail duplicado, senha nunca salva em
-texto puro, senha errada e e-mail inexistente no login, e login
-bem-sucedido retornando token.
+26 testes no total, cobrindo:
+- `AuthService`: e-mail duplicado, senha nunca salva em texto puro, senha
+  errada e e-mail inexistente no login, login bem-sucedido retornando token.
+- `EventsService`: geração de slug único (com retry em colisão), checagem
+  de ownership em `findBySlugForOwner`/`update`, e `verifyGuestAccess`
+  (senha certa, errada, slug inexistente).
+- `CreateEventDto`: validação de data não-passada.
+
+## Módulo de eventos (Sprint 2)
+
+| Rota | Método | Protegida? | O que faz |
+|---|---|---|---|
+| `/events` | POST | Dono (JWT) | Cria um evento, gera slug único e hash da senha de convidado |
+| `/events` | GET | Dono (JWT) | Lista só os eventos do dono logado |
+| `/events/:slug` | GET | Dono (JWT) | Dados completos de um evento — 404 se não existir ou não for seu |
+| `/events/:slug` | PATCH | Dono (JWT) | Edita título, tipo, data e/ou chave Pix |
+| `/events/:slug/access` | POST | Pública | Convidado confere a senha do evento (sem gerar sessão ainda — isso é Sprint 4) |
+
+Nenhuma variável de ambiente nova foi adicionada nesta sprint — as mesmas
+do Dia 1 (`DATABASE_URL`, `JWT_SECRET`, `FRONTEND_URL`) continuam
+suficientes. Toda vez que o `schema.prisma` mudar, rodar
+`npx prisma migrate dev --name algum-nome` localmente antes de dar push
+(o deploy no Render aplica a migration sozinho via `prisma migrate deploy`).
+
+Testes manuais prontos em `apps/backend/http/events.http`.
 
 ## Segurança já implementada
 - Senhas salvas com hash (`bcryptjs`), nunca em texto puro.
@@ -81,10 +103,15 @@ bem-sucedido retornando token.
   próprio servidor Next (não `localStorage`) — o JavaScript do navegador
   nunca tem acesso ao token.
 - CORS restrito à URL configurada em `FRONTEND_URL`.
-- Rate limit de 5 tentativas por minuto por IP no `/auth/login`, contra
-  força bruta.
-- Middleware no Next barrando o acesso a rotas autenticadas (hoje só
-  `/dashboard`) antes mesmo da página carregar, caso não haja o cookie.
+- Rate limit de 5 tentativas por minuto por IP no `/auth/login`, e de 10
+  por minuto no `/events/:slug/access` (senha de convidado é mais curta,
+  então mais fácil de tentar força bruta), contra força bruta.
+- Middleware no Next barrando o acesso a rotas autenticadas (`/dashboard`,
+  `/criar-casamento`, `/meus-eventos`, `/eventos`) antes mesmo da página
+  carregar, caso não haja o cookie.
+- `GET`/`PATCH /events/:slug` sempre retornam `404` (nunca `403`) tanto se
+  o evento não existe quanto se pertence a outro dono — evita que alguém
+  descubra, por tentativa e erro, quais slugs existem mas não são dele.
 
 ## Deploy
 
@@ -101,10 +128,23 @@ deploy que já está no ar.
 ## Checklist de saída da Sprint 1
 - [x] Cadastro de usuário funcionando
 - [x] Login retornando sessão válida (cookie httpOnly)
-- [ ] Rota protegida redirecionando quem não está logado *(implementado — falta aplicar e testar em produção)*
+- [x] Rota protegida redirecionando quem não está logado
 - [x] Front, back e banco todos hospedados e se comunicando
 
-## Próximos passos (Sprint 2 / v1 do MVP)
-Modelar `Event` e `Gift` no Prisma, criar o CRUD de eventos (slug + senha
-de convidado) e o formulário de cadastro de presentes com auto-fetch de
-metadados, conforme o planejamento do MVP.
+## Checklist de saída da Sprint 2
+- [x] Dono autenticado cria evento com slug único e senha de convidado
+- [x] ~~Modo de pagamento (link ou Pix) selecionável, com Pix key obrigatória quando aplicável~~
+      **Alterado do planejamento original**: não existe mais "modo de pagamento" por
+      evento. A chave Pix é **sempre obrigatória** — qualquer presente pode ser pago
+      via Pix (integral ou por cota); o link da loja é um dado de cada presente
+      (`Gift.product_url`, Sprint 3), não uma escolha do evento.
+- [x] Dono lista e edita seus próprios eventos
+- [x] Guard de ownership impede editar evento de outro dono (sempre `404`, nunca `403`)
+- [x] `POST /events/:slug/access` valida a senha de convidado corretamente
+- [ ] Tudo testado em produção, não só local *(testar após o deploy de hoje)*
+
+## Próximos passos (Sprint 3)
+Modelar `Gift` e `Contribution` no Prisma, integrar um serviço de metadados
+(Microlink ou similar) pro auto-fetch de título/imagem/preço a partir do
+link do produto, com fallback manual quando os metadados não vierem —
+conforme o planejamento do MVP v2.
