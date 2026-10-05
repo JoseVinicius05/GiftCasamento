@@ -8,28 +8,66 @@ Sistema onde um usuário cria um evento (ex: casamento) e adiciona presentes atr
 
 **Princípio central: o sistema nunca processa/custodia dinheiro.** Isso é uma decisão deliberada para evitar compliance de pagamento (regulação do Bacen, PSD2/PCI, necessidade de CNPJ e KYC) no MVP. Qualquer sugestão de código que envolva guardar cartão, processar Pix via API, ou custodiar valores deve ser sinalizada como mudança de escopo, não implementada silenciosamente.
 
-## Decisões de escopo do MVP (v1) — não expandir sem confirmar com o time
+## Decisões de escopo do MVP (v2 — atualizado no fim da Sprint 2) — não expandir sem confirmar com o time
 
-- ❌ Sem contribuição parcial / vaquinha em presente (presente é reivindicado por 1 convidado só)
-- ❌ Sem gateway de pagamento — confirmação de "recebido" é manual, feita pelo dono do evento no painel
-- ❌ Sem conta de convidado — acesso via link+senha do evento; nome do convidado é auto-declarado (não verificado) no primeiro acesso, e gera um token de sessão
-- ✅ Cadastro de presente é assistido: sistema tenta buscar metadados via serviço de link-preview (ex: Microlink/LinkPreview), preenche o que conseguir, e sempre permite edição/preenchimento manual dos campos que faltarem (preço nem sempre vem nos metadados de todo e-commerce)
+- ✅ **Contribuição parcial via Pix é permitida** (mudou do v1): um presente pode ser
+  comprado por completo (link da loja ou Pix integral) OU financiado por cotas de
+  múltiplos convidados via Pix, até completar o valor. Uma `Contribution` pendente
+  reserva o valor do presente mas **expira em 48h** se o dono não confirmar,
+  liberando o valor de novo.
+- ❌ Sem gateway de pagamento — confirmação de "recebido"/"cota confirmada" é
+  manual, feita pelo dono do evento no painel
+- ❌ Sem conta de convidado — acesso via link+senha do evento; nome do convidado é
+  auto-declarado (não verificado) no primeiro acesso
+- ✅ Cadastro de presente é assistido: sistema tenta buscar metadados via serviço
+  de link-preview (ex: Microlink/LinkPreview), preenche o que conseguir, e sempre
+  permite edição/preenchimento manual dos campos que faltarem
+
+### Decisão tomada durante a Sprint 2 (corrige o que o planejamento original dizia)
+**Não existe "modo de pagamento" por evento.** O dono só cadastra a chave Pix
+(sempre obrigatória, usada pra gerar QR codes). Link da loja é um dado de cada
+`Gift` (`product_url`), não uma escolha do evento — os dois métodos de pagamento
+(Pix e link) ficam sempre disponíveis pro convidado na hora de reivindicar,
+decidido presente a presente, nunca configurado antecipadamente pelo dono.
+
+### Extensão de escopo decidida durante a Sprint 2 (não estava no planejamento original)
+Eventos têm um campo `eventType` (`casamento` / `aniversario` / `cha_de_bebe` /
+`cha_de_cozinha` / `outro`) — o produto não é exclusivo pra casamentos. A marca
+em uso na UI é "WebGift" (ainda não confirmada como nome final).
 
 ## Stack
 
-- **Frontend**: Next.js
-- **Backend**: Nest.js
+- **Frontend**: Next.js (App Router) — monorepo em `apps/frontend`
+- **Backend**: Nest.js + Prisma — monorepo em `apps/backend`
 - **Banco de dados**: PostgreSQL
-- **Hosting (proposto)**: Vercel (front) + Railway/Render (back) + Neon (Postgres) — prioriza simplicidade de deploy, já que o time está aprendendo a stack
+- **Hosting (já em produção, não é mais "proposto")**: Vercel (front) + Render
+  (back) + Neon (Postgres, região EUA-leste, perto do Render)
 
-## Modelo de dados (visão geral — ver schema completo no planejamento)
+## Modelo de dados
 
-- `User`: dono do evento
-- `Event`: pertence a um User; tem slug, senha de convidado (hash), modo de pagamento (`redirect_link` ou `pix_key`)
-- `Gift`: pertence a um Event; tem status (`available` / `claimed` / `confirmed`)
-- `GiftClaim`: liga um Gift a um convidado (nome auto-declarado + token de sessão)
+### Já implementado (Sprints 1 e 2)
+- `User`: dono do evento — `id`, `name`, `email`, `passwordHash`, `createdAt`
+- `Event`: pertence a um `User`; `id`, `ownerId`, `eventType`, `title`,
+  `eventDate`, `slug` (único, gerado pelo backend — nunca escolhido manualmente),
+  `guestPasswordHash`, `pixKey` (sempre obrigatória), `createdAt`
 
-**Regra crítica de concorrência**: a transição de status `available → claimed` em `Gift` precisa ser atômica (transação/lock no banco) para evitar que dois convidados reivindiquem o mesmo presente simultaneamente. Qualquer implementação desse fluxo deve ser revisada com isso em mente.
+### Ainda não implementado (Sprint 3+, conforme planejamento v2)
+- `Gift`: pertence a um `Event`; `product_url`, `title`, `image_url`, `price`,
+  `price_source` (`auto`/`manual`), `status` (`available` / `partially_funded` /
+  `fully_funded` / `purchased_via_link` / `confirmed`)
+- `Contribution`: liga um `Gift` a um convidado (nome auto-declarado); `amount`,
+  `status` (`pending` / `confirmed` / `expired`), `created_at`, `expires_at`
+  (`created_at` + 48h), `confirmed_at` (nullable)
+- `EventExtraFunds`: registro contábil (não movimenta dinheiro de verdade) criado
+  quando um presente com cotas já confirmadas é comprado por completo via link —
+  o valor das cotas confirmadas vira saldo extra do casal. Visível só pro dono.
+
+**Regra crítica de concorrência (Sprint 3+)**: valor disponível de um `Gift` =
+`price - SUM(amount de Contribution com status pending ou confirmed)`. Toda nova
+contribuição precisa validar, dentro de uma transação atômica, que não ultrapassa
+esse saldo — mesmo tipo de problema de concorrência de uma reivindicação simples,
+só que somado em vez de binário. Qualquer implementação desse fluxo deve ser
+revisada com isso em mente.
 
 ## Como ajudar como assistente de IA neste projeto
 
