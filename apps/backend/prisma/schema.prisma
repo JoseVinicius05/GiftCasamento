@@ -47,5 +47,85 @@ model Event {
   pixKey            String      @map("pix_key")
   createdAt         DateTime    @default(now()) @map("created_at")
 
+  gifts      Gift[]
+  extraFunds EventExtraFunds[]
+
   @@map("events")
+}
+
+enum GiftStatus {
+  available // ninguém contribuiu/reivindicou ainda
+  partially_funded // tem ao menos uma Contribution pending ou confirmed, mas não fechou o valor
+  fully_funded // soma das Contribution confirmed == price; dono já pode comprar com o dinheiro que já recebeu
+  purchased_via_link // alguém comprou o valor inteiro via link, mesmo havendo cotas confirmadas antes (gera EventExtraFunds)
+  confirmed // dono confirmou que o presente foi efetivamente comprado/entregue
+}
+
+enum PriceSource {
+  auto // preço veio do serviço de metadados
+  manual // dono preencheu/corrigiu o preço manualmente
+}
+
+model Gift {
+  id          String      @id @default(uuid())
+  eventId     String      @map("event_id")
+  event       Event       @relation(fields: [eventId], references: [id])
+  // Pode não vir preenchido se o dono cadastrar o presente sem link
+  // (ex: "vaquinha" para algo sem produto específico).
+  productUrl  String?     @map("product_url")
+  title       String
+  imageUrl    String?     @map("image_url")
+  price       Decimal     @db.Decimal(10, 2)
+  priceSource PriceSource @map("price_source")
+  status      GiftStatus  @default(available)
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  contributions     Contribution[]
+  extraFundsEntries EventExtraFunds[]
+
+  @@map("gifts")
+}
+
+enum ContributionStatus {
+  pending // convidado marcou que vai pagar; já reserva o valor, mas expira em 48h se o dono não confirmar
+  confirmed // dono verificou que o Pix caiu de verdade
+  expired // passou de expiresAt sem confirmação; valor volta a ficar disponível
+}
+
+model Contribution {
+  id                String             @id @default(uuid())
+  giftId            String             @map("gift_id")
+  gift              Gift               @relation(fields: [giftId], references: [id])
+  // Auto-declarado pelo convidado no acesso ao evento, sem verificação de identidade.
+  guestDisplayName  String             @map("guest_display_name")
+  amount            Decimal            @db.Decimal(10, 2)
+  status            ContributionStatus @default(pending)
+  createdAt         DateTime           @default(now()) @map("created_at")
+  // Calculado na aplicação como createdAt + 48h no momento da criação,
+  // não como default do banco (Prisma/Postgres não fazem "now() + intervalo"
+  // de forma portável como default de coluna).
+  expiresAt         DateTime           @map("expires_at")
+  confirmedAt        DateTime?         @map("confirmed_at")
+
+  @@index([giftId, status])
+  @@map("contributions")
+}
+
+// Registro CONTÁBIL, não movimentação real de dinheiro: o Pix de uma
+// Contribution confirmed já caiu direto na conta do dono. Essa tabela só
+// existe para o dono saber que aquele valor "sobrou" porque o presente
+// de origem acabou sendo comprado por completo via link por outro convidado.
+model EventExtraFunds {
+  id            String   @id @default(uuid())
+  eventId       String   @map("event_id")
+  event         Event    @relation(fields: [eventId], references: [id])
+  amount        Decimal  @db.Decimal(10, 2)
+  sourceGiftId  String?  @map("source_gift_id")
+  // Se o presente de origem for excluído, mantém o registro contábil mas
+  // solta a referência — não faz sentido apagar histórico de saldo extra.
+  sourceGift    Gift?    @relation(fields: [sourceGiftId], references: [id], onDelete: SetNull)
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("event_extra_funds")
 }

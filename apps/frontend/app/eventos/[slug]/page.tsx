@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { TOKEN_COOKIE } from '../../../lib/auth-cookie';
 import EditEventForm from './EditEventForm';
+import AddGiftForm from './AddGiftForm';
 
 type EventTypeValue = 'casamento' | 'aniversario' | 'cha_de_bebe' | 'cha_de_cozinha' | 'outro';
 
@@ -103,9 +104,13 @@ export default async function PainelEventoPage({
           </div>
         </div>
 
-        {/* Lista de presentes chega na Sprint 3 */}
+        {/* Sprint 3, Dia 1: casca da tela de adicionar presente (preview mock).
+            Integração real com o serviço de metadados e o endpoint de
+            criação chegam nos próximos dias desta sprint. */}
+        <AddGiftForm slug={event.slug} />
+
         <div className="rounded-2xl border-2 border-dashed border-pink-200 bg-white/60 p-6 text-center text-gray-500">
-          A lista de presentes deste evento chega na Sprint 3.
+          A listagem dos presentes já cadastrados chega no Dia 3/4 desta sprint.
         </div>
 
         <EditEventForm
