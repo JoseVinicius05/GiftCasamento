@@ -20,8 +20,19 @@ Sistema onde um usuário cria um evento (ex: casamento) e adiciona presentes atr
 - ❌ Sem conta de convidado — acesso via link+senha do evento; nome do convidado é
   auto-declarado (não verificado) no primeiro acesso
 - ✅ Cadastro de presente é assistido: sistema tenta buscar metadados via serviço
-  de link-preview (ex: Microlink/LinkPreview), preenche o que conseguir, e sempre
-  permite edição/preenchimento manual dos campos que faltarem
+  de link-preview, preenche o que conseguir, e sempre permite edição/preenchimento
+  manual dos campos que faltarem
+
+### Decisão tomada no início da Sprint 3: e-commerces suportados são limitados
+**Apenas Mercado Livre e Amazon** têm integração de auto-fetch no MVP. Qualquer
+outra loja (Shopee, Magalu, etc.) retorna erro claro de "e-commerce não suportado"
+e cai direto pro preenchimento manual — não existe "tentar Microlink em qualquer
+URL" como suporte oficial. Mercado Livre usa a API oficial (fallback técnico
+Microlink); Amazon usa a Bright Data Web Scraper API (fallback Microlink).
+
+**Mercado Livre exige OAuth — confirmado por teste real no Dia 1 da Sprint 3**:
+`GET /items/{id}` sem token retorna `403 PA_UNAUTHORIZED_RESULT_FROM_POLICIES`.
+Não existe atalho sem autenticação. Ver `MercadoLivreToken` no modelo de dados.
 
 ### Decisão tomada durante a Sprint 2 (corrige o que o planejamento original dizia)
 **Não existe "modo de pagamento" por evento.** O dono só cadastra a chave Pix
@@ -51,16 +62,26 @@ em uso na UI é "WebGift" (ainda não confirmada como nome final).
   `eventDate`, `slug` (único, gerado pelo backend — nunca escolhido manualmente),
   `guestPasswordHash`, `pixKey` (sempre obrigatória), `createdAt`
 
-### Ainda não implementado (Sprint 3+, conforme planejamento v2)
 - `Gift`: pertence a um `Event`; `product_url`, `title`, `image_url`, `price`,
   `price_source` (`auto`/`manual`), `status` (`available` / `partially_funded` /
-  `fully_funded` / `purchased_via_link` / `confirmed`)
+  `fully_funded` / `purchased_via_link` / `confirmed`) — schema migrado na
+  Sprint 3, Dia 1. Ainda sem endpoints (CRUD chega nos próximos dias da sprint).
 - `Contribution`: liga um `Gift` a um convidado (nome auto-declarado); `amount`,
   `status` (`pending` / `confirmed` / `expired`), `created_at`, `expires_at`
-  (`created_at` + 48h), `confirmed_at` (nullable)
+  (`created_at` + 48h), `confirmed_at` (nullable) — schema migrado, Sprint 3 Dia 1.
 - `EventExtraFunds`: registro contábil (não movimenta dinheiro de verdade) criado
   quando um presente com cotas já confirmadas é comprado por completo via link —
   o valor das cotas confirmadas vira saldo extra do casal. Visível só pro dono.
+  Schema migrado, Sprint 3 Dia 1.
+- `MercadoLivreToken`: única linha (`id` fixo), guarda `accessToken`/`refreshToken`/
+  `expiresAt` da ÚNICA conta de integração do Mercado Livre usada pelo sistema
+  (não é por usuário dono de evento). Schema migrado, Sprint 3 Dia 2. Nunca logar
+  o conteúdo desses campos.
+
+### Ainda não implementado (Sprint 3, dias seguintes)
+- `MetadataService` ligando Mercado Livre + Amazon + identificação de domínio
+  num único ponto de entrada; `POST /events/:slug/gifts/preview`.
+- CRUD de `Gift` (`POST`/`GET`/`PATCH /events/:slug/gifts...`).
 
 **Regra crítica de concorrência (Sprint 3+)**: valor disponível de um `Gift` =
 `price - SUM(amount de Contribution com status pending ou confirmed)`. Toda nova

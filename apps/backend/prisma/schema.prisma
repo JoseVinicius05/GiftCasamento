@@ -129,3 +129,20 @@ model EventExtraFunds {
 
   @@map("event_extra_funds")
 }
+
+// Uma única linha (id fixo = 1): o MVP tem só UMA conta de integração do
+// Mercado Livre pra todo o sistema — não é por usuário. Confirmado por teste
+// real no Dia 1 da Sprint 3: GET /items sem token retorna 403
+// PA_UNAUTHORIZED_RESULT_FROM_POLICIES, então OAuth não é opcional aqui.
+model MercadoLivreToken {
+  id           Int      @id @default(autoincrement())
+  accessToken  String   @map("access_token")
+  // Rotativo: toda vez que é usado pra dar refresh, o Mercado Livre devolve
+  // um refreshToken NOVO, e o antigo para de funcionar. Sempre sobrescrever.
+  refreshToken String   @map("refresh_token")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("mercado_livre_tokens")
+}
