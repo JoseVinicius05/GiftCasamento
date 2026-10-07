@@ -72,17 +72,19 @@ export default function Home() {
     <main className="min-h-screen overflow-hidden bg-[#fcfaf8] text-[#262321]">
 
       {/* NAVBAR */}
-      <header className="fixed left-0 right-0 top-0 z-50">
-        <div className="mx-auto mt-4 flex max-w-7xl items-center justify-between rounded-full border border-black/5 bg-white/80 px-5 py-3 shadow-sm backdrop-blur-md md:px-7">
+      <header className="fixed left-0 right-0 top-0 z-50 px-3 sm:px-4">
+
+        <div className="mx-auto mt-3 flex w-full max-w-7xl items-center justify-between rounded-full border border-black/5 bg-white/80 px-4 py-2.5 shadow-lg shadow-black/5 backdrop-blur-xl sm:mt-4 sm:px-5 sm:py-3 md:px-7">
 
           <Link
             href="/"
-            className="font-serif text-xl tracking-tight text-[#302b28]"
+            className="font-serif text-lg tracking-tight text-[#302b28] sm:text-xl"
           >
             Web<span className="italic text-[#b47b7f]">Gift</span>
           </Link>
 
           <nav className="hidden items-center gap-8 text-sm text-[#66605b] md:flex">
+
             <a href="#como-funciona" className="transition hover:text-[#302b28]">
               Como funciona
             </a>
@@ -134,55 +136,67 @@ export default function Home() {
               />
 
               <span className="relative flex items-center justify-center gap-2">
-                ✨
-                Criar meu evento
+                <span className="sm:hidden">✨&nbsp; Criar evento</span>
+                <span className="hidden sm:inline">✨&nbsp; Criar meu evento</span>
               </span>
             </Link>
+            <details className="relative lg:hidden">
+              <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-full border border-black/10 bg-white/70 text-[#302b28] shadow-sm [&::-webkit-details-marker]:hidden">
+                <span className="text-xl leading-none">☰</span>
+              </summary>
+              <div className="absolute right-0 top-12 w-56 overflow-hidden rounded-2xl border border-black/5 bg-white/95 p-2 shadow-xl backdrop-blur-xl">
+                <a href="#como-funciona" className="block rounded-xl px-4 py-3 text-sm text-[#5f5954] transition hover:bg-[#f8f1ee] hover:text-[#302b28]">Como funciona</a>
+                <a href="#presentes" className="block rounded-xl px-4 py-3 text-sm text-[#5f5954] transition hover:bg-[#f8f1ee] hover:text-[#302b28]">Presentes</a>
+                <a href="#duvidas" className="block rounded-xl px-4 py-3 text-sm text-[#5f5954] transition hover:bg-[#f8f1ee] hover:text-[#302b28]">Dúvidas</a>
+                <Link href="/login" className="mt-1 block rounded-xl bg-[#2d2926] px-4 py-3 text-center text-sm font-medium text-white">Entrar</Link>
+              </div>
+            </details>
           </div>
         </div>
       </header>
 
       {/* HERO */}
-      <section className="relative px-5 pb-20 pt-32 md:px-8 md:pb-28 md:pt-40">
-        <div className="mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-[1.05fr_0.95fr]">
+      <section className="relative w-full overflow-hidden px-5 pb-20 pt-32 md:px-8 md:pb-28 md:pt-40">
+        <div className="mx-auto grid w-full min-w-0 max-w-7xl items-center gap-14 lg:grid-cols-[1.05fr_0.95fr]">
 
-          <div className="max-w-2xl">
+          {/* TEXTO */}
+          <div className="w-full min-w-0 max-w-2xl">
 
-            <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-[#ded4cd] bg-white px-4 py-2 text-sm text-[#766d66]">
-              <span className="h-2 w-2 rounded-full bg-[#b47b7f]" />
-              Uma nova forma de presentear
+            <div className="mb-7 inline-flex max-w-full items-center gap-2 rounded-full border border-[#ded4cd] bg-white px-4 py-2 text-sm text-[#766d66]">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-[#b47b7f]" />
+              <span>Uma nova forma de presentear</span>
             </div>
 
-            <h1 className="font-serif text-5xl leading-[0.98] tracking-[-0.04em] text-[#292522] sm:text-6xl lg:text-7xl">
+            <h1 className="w-full min-w-0 break-words font-serif text-[2.75rem] leading-[0.98] tracking-[-0.04em] text-[#292522] sm:text-6xl lg:text-7xl">
               O presente que
-              <span className="block italic text-[#a86f73]">
+              <span className="block break-words italic text-[#a86f73]">
                 faz parte da história.
               </span>
             </h1>
 
-            <p className="mt-7 max-w-xl text-lg leading-8 text-[#6e6761] md:text-xl">
+            <p className="mt-7 w-full max-w-xl break-words text-lg leading-8 text-[#6e6761] md:text-xl">
               Crie uma página especial para o seu evento, monte sua lista
               de presentes e compartilhe um único link com todas as pessoas
               que fazem parte desse momento.
             </p>
 
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-9 flex w-full flex-col gap-3 sm:flex-row">
               <Link
                 href="/login"
-                className="rounded-full bg-[#2d2926] px-7 py-4 text-center font-medium text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-[#46403b]"
+                className="w-full rounded-full bg-[#2d2926] px-7 py-4 text-center font-medium text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-[#46403b] sm:w-auto"
               >
                 Criar meu evento
               </Link>
 
               <a
                 href="#como-funciona"
-                className="rounded-full border border-[#d9d1ca] bg-white px-7 py-4 text-center font-medium text-[#433d38] transition hover:bg-[#f6f1ed]"
+                className="w-full rounded-full border border-[#d9d1ca] bg-white px-7 py-4 text-center font-medium text-[#433d38] transition hover:bg-[#f6f1ed] sm:w-auto"
               >
                 Descobrir como funciona
               </a>
             </div>
 
-            <div className="mt-8 flex flex-wrap gap-x-7 gap-y-3 text-sm text-[#847b74]">
+            <div className="mt-8 flex w-full flex-wrap gap-x-7 gap-y-3 text-sm text-[#847b74]">
               <span>✓ Página personalizada</span>
               <span>✓ Lista de presentes</span>
               <span>✓ Pagamento online</span>
@@ -190,7 +204,12 @@ export default function Home() {
           </div>
 
           {/* CAROUSEL */}
-          <EventPerspectiveCarousel />
+          <div className="w-full min-w-0">
+            <div className="w-full min-w-0">
+              <EventPerspectiveCarousel />
+            </div>
+          </div>
+
         </div>
       </section>
 

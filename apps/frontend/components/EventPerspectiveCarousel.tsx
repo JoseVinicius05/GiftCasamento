@@ -53,7 +53,7 @@ const events = [
     badge: "lista de presentes",
   },
 ];
-
+const carouselEvents = [...events, ...events];
 export default function EventPerspectiveCarousel() {
   return (
     <div className="relative mx-auto w-full max-w-[620px]">
@@ -88,7 +88,7 @@ export default function EventPerspectiveCarousel() {
         }}
         className="gift-perspective-carousel !pb-12"
       >
-        {events.map((event, index) => (
+        {carouselEvents.map((event, index) => (
           <SwiperSlide key={`${event.type}-${index}`}>
             <div className="relative mx-auto aspect-[4/4] w-full overflow-hidden rounded-[34px] bg-white shadow-2xl shadow-black/20">
 
