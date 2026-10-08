@@ -34,6 +34,24 @@ Microlink); Amazon usa a Bright Data Web Scraper API (fallback Microlink).
 `GET /items/{id}` sem token retorna `403 PA_UNAUTHORIZED_RESULT_FROM_POLICIES`.
 Não existe atalho sem autenticação. Ver `MercadoLivreToken` no modelo de dados.
 
+**Decisão do Dia 3 da Sprint 3 (testes reais, corrige o texto acima sobre o ML):**
+- Mesmo COM token OAuth válido, `GET /items/{id}` devolve `403 access_denied`
+  para anúncios de outros vendedores. O caminho principal do ML passou a ser o
+  **catálogo**: `GET /products/{productId}` (URLs `/p/MLB...`), que traz título
+  (`name`) e imagem (`pictures[0].url`).
+- **O preço do Mercado Livre NÃO vem** (`buy_box_winner` é `null`). No ML o
+  preço é sempre digitado pelo dono (`priceSource = 'manual'`) — isso é o caso
+  normal, não erro. O formulário só destaca o campo.
+- **Sem fallback Microlink pro ML** (ele devolve só o título/logo genéricos do
+  site). Falhou? Campos vazios e preenchimento manual. Microlink segue só como
+  fallback técnico da Amazon.
+- `productId` (`/p/MLB...`, catálogo) e `itemId` (`?wid=` ou `/MLB-123-...`,
+  anúncio) são IDs diferentes — nunca usar um no endpoint do outro. O `wid`
+  dos links de recomendação vem DEPOIS do `#`.
+- Falha de token (`invalid_grant`, ML não conectado) nunca bloqueia o cadastro
+  de presente: o preview devolve campos vazios e o log pede pra refazer
+  `GET /auth/mercadolivre/connect`.
+
 ### Decisão tomada durante a Sprint 2 (corrige o que o planejamento original dizia)
 **Não existe "modo de pagamento" por evento.** O dono só cadastra a chave Pix
 (sempre obrigatória, usada pra gerar QR codes). Link da loja é um dado de cada
@@ -78,10 +96,17 @@ em uso na UI é "WebGift" (ainda não confirmada como nome final).
   (não é por usuário dono de evento). Schema migrado, Sprint 3 Dia 2. Nunca logar
   o conteúdo desses campos.
 
+### Implementado no Dia 3 da Sprint 3
+- `MercadoLivreService` (catálogo + retry único de 401), `MetadataService`
+  (identifica a loja e normaliza em `GiftPreview`) e
+  `POST /events/:slug/gifts/preview` (JWT + ownership 404 + rate limit).
+  Loja fora do escopo → `422 UNSUPPORTED_ECOMMERCE`.
+- Frontend: `AddGiftForm` usa o preview real; diferencia "e-commerce não
+  suportado" de "campo não veio" (`missingFields`).
+
 ### Ainda não implementado (Sprint 3, dias seguintes)
-- `MetadataService` ligando Mercado Livre + Amazon + identificação de domínio
-  num único ponto de entrada; `POST /events/:slug/gifts/preview`.
-- CRUD de `Gift` (`POST`/`GET`/`PATCH /events/:slug/gifts...`).
+- CRUD de `Gift` (`POST`/`GET`/`PATCH /events/:slug/gifts...`) e o botão
+  "Salvar presente" no frontend (Dia 4).
 
 **Regra crítica de concorrência (Sprint 3+)**: valor disponível de um `Gift` =
 `price - SUM(amount de Contribution com status pending ou confirmed)`. Toda nova

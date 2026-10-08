@@ -8,6 +8,21 @@ const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 // Única linha da tabela: uma conta de integração do ML pro MVP inteiro.
 const TOKEN_ROW_ID = 1;
 
+// Erro específico de autenticação com o Mercado Livre (token inexistente,
+// refresh recusado, invalid_grant...). Quem consome o token service (o
+// MercadoLivreService) captura este erro pra NÃO derrubar o cadastro do
+// presente: o dono só perde o auto-preenchimento e segue no modo manual.
+// "code" guarda só o código do ML (ex: "invalid_grant") — nunca token.
+export class MercadoLivreAuthError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+  ) {
+    super(message);
+    this.name = 'MercadoLivreAuthError';
+  }
+}
+
 @Injectable()
 export class MercadoLivreTokenService {
   private readonly logger = new Logger(MercadoLivreTokenService.name);
@@ -31,14 +46,37 @@ export class MercadoLivreTokenService {
     });
 
     if (!token) {
-      throw new Error(
-        'Mercado Livre ainda não foi conectado. Peça a um dono logado para acessar ' +
-          'GET /auth/mercadolivre/connect e autorizar o app.',
+      throw new MercadoLivreAuthError(
+        'Mercado Livre ainda não foi conectado. Acesse ' +
+          'GET /auth/mercadolivre/connect?key=<MERCADOLIVRE_SETUP_KEY> para autorizar o app.',
+        'not_connected',
       );
     }
 
     const willExpireSoon = token.expiresAt.getTime() - Date.now() <= REFRESH_MARGIN_MS;
     if (!willExpireSoon) {
+      return token.accessToken;
+    }
+
+    return this.refreshAccessToken(token.refreshToken);
+  }
+
+  // Usado quando o ML responde 401 mesmo com um token que a gente achava
+  // válido (ex: o token foi revogado antes do expiresAt). Recebe o token que
+  // acabou de falhar ("staleAccessToken") por um motivo: se outra requisição
+  // concorrente já renovou o token enquanto esta estava em voo, o banco já
+  // tem um token DIFERENTE — nesse caso só devolvemos o novo, sem gastar um
+  // segundo refresh (que invalidaria o refresh_token recém-rotacionado).
+  async forceRefresh(staleAccessToken: string): Promise<string> {
+    const token = await this.prisma.mercadoLivreToken.findUnique({
+      where: { id: TOKEN_ROW_ID },
+    });
+
+    if (!token) {
+      throw new MercadoLivreAuthError('Mercado Livre ainda não foi conectado.', 'not_connected');
+    }
+
+    if (token.accessToken !== staleAccessToken) {
       return token.accessToken;
     }
 
@@ -100,7 +138,10 @@ export class MercadoLivreTokenService {
       // precisa ser refeita do zero (ver seção 5.9 do planejamento). Quem
       // chama este serviço (o MetadataService, Dia 3) decide o que fazer
       // com isso — aqui só propagamos um erro claro, sem decidir fallback.
-      throw new Error(`Falha ao renovar token do Mercado Livre (${data.error ?? 'erro desconhecido'})`);
+      throw new MercadoLivreAuthError(
+        `Falha ao renovar token do Mercado Livre (${data.error ?? 'erro desconhecido'})`,
+        data.error ?? 'unknown',
+      );
     }
 
     const expiresAt = new Date(Date.now() + data.expires_in * 1000);

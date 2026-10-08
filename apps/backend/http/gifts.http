@@ -1,0 +1,74 @@
+### Extensão "REST Client" do VSCode. Rode o bloco "login" primeiro —
+### os demais reaproveitam o token dele automaticamente.
+### Troque @slug pelo slug de um evento SEU (rode GET /events pra ver).
+@baseUrl = http://localhost:3001
+@slug = casamento-ana-joao-x7k2
+
+### 1) Login
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "teste@gmail.com",
+  "password": "12345678"
+}
+
+### 2) Preview Mercado Livre — página de catálogo (/p/MLB...)
+### Esperado: 200, title + imageUrl preenchidos, price null, missingFields ["price"], store "mercadolivre"
+POST {{baseUrl}}/events/{{slug}}/gifts/preview
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "url": "https://www.mercadolivre.com.br/liquidificador-arno-power-max-de-31-l-e-2200w-com-15-velocidades-preto/p/MLB67008669#polycard_client=recommendations_home&wid=MLB5214413673"
+}
+
+### 3) Preview Amazon (use um link real de produto da amazon.com.br)
+### Esperado: 200, store "amazon"; campos que não vierem aparecem em missingFields
+POST {{baseUrl}}/events/{{slug}}/gifts/preview
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "url": "https://www.amazon.com.br/dp/COLE_UM_ASIN_REAL_AQUI"
+}
+
+### 4) Loja não suportada
+### Esperado: 422 com { "code": "UNSUPPORTED_ECOMMERCE", "message": "E-commerce não suportado..." }
+POST {{baseUrl}}/events/{{slug}}/gifts/preview
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "url": "https://shopee.com.br/produto-qualquer"
+}
+
+### 5) URL inválida
+### Esperado: 400 com a mensagem de validação
+POST {{baseUrl}}/events/{{slug}}/gifts/preview
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "url": "isso nao e um link"
+}
+
+### 6) Evento que não existe (ou de outro dono)
+### Esperado: 404 "Evento não encontrado" (nunca 403)
+POST {{baseUrl}}/events/slug-que-nao-existe/gifts/preview
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "url": "https://www.mercadolivre.com.br/x/p/MLB67008669"
+}
+
+### 7) Sem token
+### Esperado: 401 "Token ausente"
+POST {{baseUrl}}/events/{{slug}}/gifts/preview
+Content-Type: application/json
+
+{
+  "url": "https://www.mercadolivre.com.br/x/p/MLB67008669"
+}

@@ -2,15 +2,15 @@ import { Module } from '@nestjs/common';
 import { AmazonExtractor } from './amazon/amazon.extractor';
 import { BrightDataService } from './amazon/brightdata.service';
 import { MercadoLivreModule } from './mercado-livre/mercado-livre.module';
+import { MetadataService } from './metadata.service';
 import { MicrolinkService } from './microlink/microlink.service';
 
-// Ainda sem MetadataService/controller próprios — isso entra no Dia 3,
-// junto com o endpoint POST /events/:slug/gifts/preview. Por hoje (Dia 2),
-// este módulo só junta as peças que já estão prontas: a conexão OAuth do
-// Mercado Livre, e o pipeline da Amazon (Bright Data + Microlink).
+// Junta as peças do auto-fetch: Mercado Livre (API oficial, catálogo) e
+// Amazon (Bright Data + fallback Microlink). O MetadataService é o único
+// ponto de entrada usado pelo resto do backend (GiftsController).
 @Module({
   imports: [MercadoLivreModule],
-  providers: [BrightDataService, MicrolinkService, AmazonExtractor],
-  exports: [MercadoLivreModule, AmazonExtractor],
+  providers: [BrightDataService, MicrolinkService, AmazonExtractor, MetadataService],
+  exports: [MetadataService],
 })
 export class MetadataModule {}
