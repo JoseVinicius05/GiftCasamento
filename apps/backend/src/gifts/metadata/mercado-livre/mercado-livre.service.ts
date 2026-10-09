@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ProductMetadata } from '../types/product-metadata';
+import { discoverCatalogId } from './mercado-livre-redirect';
 import { parseMercadoLivreUrl } from './mercado-livre-url';
 import { MercadoLivreAuthError, MercadoLivreTokenService } from './mercado-livre-token.service';
 
@@ -9,25 +10,30 @@ const TIMEOUT_MS = 8_000;
 // Resultado interno de uma chamada à API do ML.
 type MlResponse = { status: number; body: any };
 
+// Token em uso nesta consulta. Fica num objeto pra que, se um 401 forçar a
+// renovação, as chamadas seguintes da MESMA consulta já usem o token novo.
+type TokenContext = { token: string };
+
+const ITEM_ATTRIBUTES = 'id,title,price,currency_id,pictures,thumbnail,catalog_product_id';
+
 // Busca título/imagem/preço de um produto do Mercado Livre.
 //
-// ESTRATÉGIA (decidida com testes reais no Dia 3 da Sprint 3):
+// ESTRATÉGIA (decidida com testes reais, Sprint 3):
 //
-// 1. Catálogo (/products/{productId}) é o caminho PRINCIPAL. É o único que
-//    responde para anúncios de outros vendedores: GET /items/{id} devolve
-//    403 access_denied mesmo com token OAuth válido (e 403
-//    PA_UNAUTHORIZED_RESULT_FROM_POLICIES sem token).
-// 2. /items/{itemId} só é tentado quando a URL NÃO tem ID de catálogo (URLs
-//    clássicas de anúncio, /MLB-123-titulo_JM). Provavelmente vai dar 403 —
-//    nesse caso o dono preenche tudo manualmente. Não vale gastar mais
-//    chamadas tentando contornar isso.
-// 3. O PREÇO NÃO VEM: o catálogo devolve buy_box_winner = null para os
-//    produtos testados. Lemos buy_box_winner?.price caso algum dia venha,
-//    mas o fluxo do MVP assume que no Mercado Livre o preço é preenchido
-//    manualmente pelo dono (priceSource = 'manual').
-// 4. NÃO usamos Microlink de fallback aqui: pro ML ele devolve só o título
-//    e o logo genéricos do site ("Mercado Livre"), e isso seria pior que
-//    campo vazio (pareceria um dado válido).
+// 1. CATÁLOGO — GET /products/{productId} (URLs /p/MLB...). É o único
+//    caminho confirmado: GET /items/{id} devolve 403 access_denied mesmo
+//    com token OAuth válido para anúncios de outros vendedores. Traz título
+//    e imagem, mas NÃO o preço (buy_box_winner vem null).
+// 2. MULTIGET — GET /items?ids={itemId} (Dia 4). Endpoint diferente do
+//    /items/{id}, descrito na documentação do ML. NÃO sabemos se tem a mesma
+//    restrição — é uma tentativa barata (1 chamada). Se funcionar, traz até o
+//    PREÇO. O log diz qual camada funcionou, pra gente descobrir em produção.
+// 3. DESCOBERTA POR REDIRECT — pra links sem /p/MLB (ex: /MLB-123-titulo_JM),
+//    pede a página sem seguir o redirect e lê o "Location": se o ML mandar o
+//    anúncio pra uma página /p/MLB..., usamos esse ID no catálogo (camada 1).
+//
+// NÃO usamos Microlink de fallback aqui: pro ML ele devolve só o título e o
+// logo genéricos do site ("Mercado Livre"), pior que campo vazio.
 //
 // Este serviço NUNCA lança exceção: qualquer falha (token, rede, 403, 404)
 // vira "campos null". Falha de integração externa não pode travar o
@@ -46,28 +52,39 @@ export class MercadoLivreService {
       return this.empty();
     }
 
-    let accessToken: string;
+    const ctx: TokenContext = { token: '' };
     try {
-      accessToken = await this.tokenService.getValidAccessToken();
+      ctx.token = await this.tokenService.getValidAccessToken();
     } catch (error) {
       this.logTokenProblem(error);
       return this.empty();
     }
 
     try {
+      // Camada 1: catálogo, quando a URL já traz o productId.
       if (productId) {
-        const response = await this.callApi(`/products/${productId}`, accessToken);
-        if (response.status === 200) return this.fromProduct(response.body);
-        this.logger.warn(`ML /products/${productId} respondeu ${response.status}.`);
-        return this.empty();
+        const fromCatalog = await this.fetchCatalog(productId, ctx);
+        if (fromCatalog) return fromCatalog;
       }
 
-      // Sem catálogo: última tentativa pelo anúncio.
-      const response = await this.callApi(`/items/${itemId}`, accessToken);
-      if (response.status === 200) return this.fromItem(response.body);
+      // Camada 2: multiget pelo itemId (wid ou /MLB-123-...).
+      if (itemId) {
+        const fromItem = await this.fetchItemMultiget(itemId, ctx);
+        if (fromItem) return fromItem;
+      }
+
+      // Camada 3: sem catálogo na URL — tenta descobrir pelo redirect da página.
+      if (!productId) {
+        const discovered = await discoverCatalogId(url);
+        if (discovered) {
+          this.logger.log(`Catálogo ${discovered} descoberto pelo redirect da página do anúncio.`);
+          const fromCatalog = await this.fetchCatalog(discovered, ctx);
+          if (fromCatalog) return fromCatalog;
+        }
+      }
+
       this.logger.warn(
-        `ML /items/${itemId} respondeu ${response.status} — esperado para anúncios de ` +
-          'outros vendedores; o dono vai preencher manualmente.',
+        'Mercado Livre: nenhuma camada trouxe dados — o dono vai preencher manualmente.',
       );
       return this.empty();
     } catch (error) {
@@ -80,16 +97,46 @@ export class MercadoLivreService {
     }
   }
 
+  private async fetchCatalog(productId: string, ctx: TokenContext): Promise<ProductMetadata | null> {
+    const response = await this.callApi(`/products/${productId}`, ctx);
+    if (response.status === 200) {
+      this.logger.log(`ML: dados obtidos pelo catálogo (/products/${productId}).`);
+      return this.fromProduct(response.body);
+    }
+    this.logger.warn(`ML /products/${productId} respondeu ${response.status}.`);
+    return null;
+  }
+
+  // O multiget devolve uma LISTA: [{ code: 200, body: {...item} }].
+  private async fetchItemMultiget(itemId: string, ctx: TokenContext): Promise<ProductMetadata | null> {
+    const response = await this.callApi(
+      `/items?ids=${itemId}&attributes=${ITEM_ATTRIBUTES}`,
+      ctx,
+    );
+
+    const entry = Array.isArray(response.body) ? response.body[0] : null;
+    if (response.status === 200 && entry?.code === 200 && entry.body) {
+      this.logger.log(`ML: dados obtidos pelo multiget (/items?ids=${itemId}).`);
+      return this.fromItem(entry.body);
+    }
+
+    this.logger.warn(
+      `ML multiget de ${itemId} respondeu ${response.status}` +
+        `${entry?.code ? ` (item: ${entry.code})` : ''} — esperado se o ML restringir anúncios de terceiros.`,
+    );
+    return null;
+  }
+
   // Faz o GET autenticado. Se o ML responder 401, renova o token UMA vez e
   // repete UMA vez — nunca em loop. Se o refresh falhar (invalid_grant), o
   // MercadoLivreAuthError sobe pro fetchMetadata, que devolve campos vazios.
-  private async callApi(path: string, accessToken: string): Promise<MlResponse> {
-    const first = await this.get(path, accessToken);
+  private async callApi(path: string, ctx: TokenContext): Promise<MlResponse> {
+    const first = await this.get(path, ctx.token);
     if (first.status !== 401) return first;
 
     this.logger.warn('ML respondeu 401 — renovando o token e tentando uma única vez de novo.');
-    const freshToken = await this.tokenService.forceRefresh(accessToken);
-    return this.get(path, freshToken);
+    ctx.token = await this.tokenService.forceRefresh(ctx.token);
+    return this.get(path, ctx.token);
   }
 
   private async get(path: string, accessToken: string): Promise<MlResponse> {
@@ -128,7 +175,7 @@ export class MercadoLivreService {
 
     return {
       title: body?.title ?? null,
-      imageUrl: body?.pictures?.[0]?.url ?? body?.thumbnail ?? null,
+      imageUrl: body?.pictures?.[0]?.secure_url ?? body?.pictures?.[0]?.url ?? body?.thumbnail ?? null,
       price,
       currency: price !== null ? body?.currency_id ?? 'BRL' : null,
       source: 'mercadolivre-api',

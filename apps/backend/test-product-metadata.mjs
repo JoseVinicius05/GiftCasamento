@@ -17,9 +17,16 @@
 // Microlink (fallback):
 //   MICROLINK_API_KEY="..." node test-product-metadata.mjs "URL_DA_AMAZON"
 //
+// Links encurtados da Amazon (a.co, amzn.to): o script mostra a cadeia de
+// redirects e se a Amazon bloqueia a resolução a partir da SUA rede — o
+// backend em produção (Render) pode se comportar diferente.
+//
+// Links do Mercado Livre sem /p/MLB: o script testa, nesta ordem, o catálogo,
+// o multiget (/items?ids=) e a descoberta por redirect, e diz qual funcionou.
+//
 // No PowerShell, troque por: $env:NOME="valor"; node .\test-product-metadata.mjs "URL"
 
-const url = process.argv[2];
+let url = process.argv[2];
 if (!url) {
   console.error('Uso: node test-product-metadata.mjs "URL_DO_PRODUTO"');
   process.exit(1);
@@ -35,6 +42,7 @@ async function testMicrolink() {
     const res = await fetch(endpoint, { headers });
     const json = await res.json();
     console.log('status HTTP:', res.status, '| status Microlink:', json.status);
+    console.log('url final (depois dos redirects):', json.data?.url);
     console.log('title:', json.data?.title);
     console.log('image:', json.data?.image?.url);
     console.log('price (raw, se vier):', json.data?.price, json.data?.currency);
@@ -72,43 +80,129 @@ async function testBrightData() {
   }
 }
 
+const BROWSER_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml',
+  'Accept-Language': 'pt-BR,pt;q=0.9',
+};
+
+const hostOf = (raw) => {
+  try {
+    return new URL(raw).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+};
+const isMlHost = (h) => /(^|\.)mercadolivre\.com\.br$/.test(h);
+const isAmazonShortHost = (h) => ['a.co', 'amzn.to', 'amzn.eu', 'amzn.asia'].includes(h);
+
+// Segue redirects na mão, mostrando cada salto. Só entra em hosts permitidos.
+async function followRedirects(startUrl, isAllowedHost, label) {
+  let current = startUrl;
+  for (let hop = 1; hop <= 4; hop++) {
+    const host = hostOf(current);
+    console.log(`  salto ${hop}: ${current}`);
+    if (!isAllowedHost(host)) {
+      console.log(`  (parei: "${host}" não é um host permitido para ${label})`);
+      return current;
+    }
+    let res;
+    try {
+      res = await fetch(current, { redirect: 'manual', headers: BROWSER_HEADERS });
+    } catch (err) {
+      console.log('  falha de rede:', err.message);
+      return null;
+    }
+    const location = res.headers.get('location');
+    console.log(`  -> status ${res.status}${location ? ` | Location: ${location}` : ' | sem Location'}`);
+    if (res.status < 300 || res.status >= 400 || !location) return current;
+    current = new URL(location, current).toString();
+  }
+  return current;
+}
+
+// ---------------------------------------------------------------------------
+// Amazon: link encurtado (a.co, amzn.to...)
+// ---------------------------------------------------------------------------
+async function testAmazonShortLink() {
+  console.log('\n--- Amazon: link encurtado ---');
+  const isAmazonProduct = (h) => /(^|\.)amazon\.com(\.br)?$/.test(h);
+  const final = await followRedirects(url, (h) => isAmazonShortHost(h), 'encurtador da Amazon');
+
+  if (final && isAmazonProduct(hostOf(final))) {
+    const asin = new URL(final).pathname.match(/\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})/i)?.[1];
+    console.log(
+      asin
+        ? `Resolvido pelo redirect direto. ASIN: ${asin}\nLink limpo: https://${hostOf(final).endsWith('.br') ? 'www.amazon.com.br' : 'www.amazon.com'}/dp/${asin.toUpperCase()}`
+        : 'Chegou na Amazon, mas sem ASIN no caminho (não é uma página de produto).',
+    );
+    if (asin) url = final;
+    return;
+  }
+
+  console.log(
+    'O redirect direto NÃO resolveu a partir daqui. No backend, a camada 2 usa o Microlink ' +
+      '(abre o link num navegador de verdade). Rode o teste do Microlink abaixo com MICROLINK_API_KEY ' +
+      'e veja se o campo "url" final aparece.',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mercado Livre
+// ---------------------------------------------------------------------------
 function parseMercadoLivreUrl(rawUrl) {
   let u;
   try {
     u = new URL(rawUrl);
   } catch {
-    return null;
+    return { productId: null, itemId: null };
   }
 
-  // product_id do catálogo (/.../p/MLB123...), quando existir — serve de fallback
   const prod = u.pathname.match(/\/p\/(MLB\d+)/i);
   const productId = prod ? prod[1].toUpperCase() : null;
 
-  // 1) wid = item_id (anúncio exato que o usuário viu).
-  // Nos links de recomendação do ML ele vem depois do '#', não do '?'.
+  // Nos links de recomendação do ML o wid vem depois do '#', não do '?'.
   const hashParams = new URLSearchParams(u.hash.replace(/^#/, ''));
   const wid = u.searchParams.get('wid') ?? hashParams.get('wid');
+
+  let itemId = null;
   if (wid && /^MLB\d+$/i.test(wid)) {
-    return { type: 'item', id: wid.toUpperCase(), productId };
+    itemId = wid.toUpperCase();
+  } else if (!productId) {
+    const classic = u.pathname.match(/MLB-?(\d+)/i);
+    if (classic) itemId = `MLB${classic[1]}`;
   }
-
-  // 2) Só catálogo: /p/MLB123 é product_id (NÃO é item_id)
-  if (productId) return { type: 'product', id: productId, productId };
-
-  // 3) Anúncio clássico: /MLB-123456-titulo_JM ou /MLB123456
-  const item = u.pathname.match(/MLB-?(\d+)/i);
-  if (item) return { type: 'item', id: `MLB${item[1]}`, productId: null };
-
-  return null;
+  return { productId, itemId };
 }
 
 async function fetchMl(path, headers) {
   const res = await fetch(`https://api.mercadolibre.com${path}`, { headers });
   const text = await res.text();
   let body;
-  try { body = JSON.parse(text); } catch { body = text; }
+  try {
+    body = JSON.parse(text);
+  } catch {
+    body = text;
+  }
   console.log(`GET ${path} -> status ${res.status}`);
   return { status: res.status, body };
+}
+
+async function mlCatalog(productId, headers, label) {
+  const { status, body } = await fetchMl(`/products/${productId}`, headers);
+  if (status !== 200) {
+    console.log('  corpo:', JSON.stringify(body));
+    return null;
+  }
+  const winner = body.buy_box_winner;
+  return {
+    camada: label,
+    title: body.name,
+    image: body.pictures?.[0]?.url,
+    price: winner?.price ?? null,
+    currency: winner?.currency_id ?? null,
+  };
 }
 
 async function testMercadoLivre() {
@@ -119,12 +213,12 @@ async function testMercadoLivre() {
   }
   console.log('\n--- Mercado Livre (API oficial) ---');
 
-  const parsed = parseMercadoLivreUrl(url);
-  if (!parsed) {
-    console.log('Não consegui extrair nenhum ID dessa URL (esperava wid=MLB..., /p/MLB... ou /MLB-...).');
+  const { productId, itemId } = parseMercadoLivreUrl(url);
+  console.log(`productId (catálogo): ${productId ?? '—'} | itemId (anúncio): ${itemId ?? '—'}`);
+  if (!productId && !itemId) {
+    console.log('Nenhum ID MLB encontrado nessa URL.');
     return;
   }
-  console.log(`ID extraído: ${parsed.id} (tipo: ${parsed.type})`);
 
   const headers = {
     Authorization: `Bearer ${token}`,
@@ -132,90 +226,60 @@ async function testMercadoLivre() {
     Accept: 'application/json',
   };
 
-  try {
-    let result = null;
+  let result = null;
 
-    if (parsed.type === 'item') {
-      const { status, body } = await fetchMl(`/items/${parsed.id}`, headers);
-      if (status === 200) {
-        result = {
-          title: body.title,
-          image: body.pictures?.[0]?.url ?? body.thumbnail,
-          price: body.price,
-          currency: body.currency_id,
-          source: 'items',
-        };
-      } else {
-        console.log('Corpo completo da resposta:');
-        console.log(JSON.stringify(body, null, 2));
-      }
-    }
-
-    // Fallback (ou caminho principal para URLs de catálogo): /products/{id}
-    if (!result) {
-      const productId = parsed.productId;
-      if (productId) {
-        const { status, body } = await fetchMl(`/products/${productId}`, headers);
-        if (status === 200) {
-          const winner = body.buy_box_winner;
-          // Debug temporário: descobrir onde (e se) o preço aparece nesta resposta
-          console.log('  /products campos disponíveis:', Object.keys(body).join(', '));
-          console.log('  buy_box_winner:', JSON.stringify(body.buy_box_winner ?? null));
-          for (const k of Object.keys(body)) {
-            if (/price|buy_box|offer/i.test(k) && k !== 'buy_box_winner') {
-              console.log(`  ${k}:`, JSON.stringify(body[k]));
-            }
-          }
-          result = {
-            title: body.name,
-            image: body.pictures?.[0]?.url,
-            price: winner?.price ?? null,
-            currency: winner?.currency_id ?? null,
-            source: 'products',
-          };
-          if (!winner) {
-            console.log('(produto sem buy_box_winner agora: título/imagem ok, preço indisponível)');
-          }
-        } else {
-          console.log('Corpo completo da resposta:');
-          console.log(JSON.stringify(body, null, 2));
-        }
-      }
-    }
-
-
-    if (!result) {
-      console.log('\n--- Diagnóstico do 403/erro ---');
-      // a) o token é válido e de quem? (/users/me exige token)
-      const me = await fetchMl('/users/me', headers);
-      console.log('  /users/me:', me.status === 200
-        ? `ok (user ${me.body.id}, ${me.body.nickname})`
-        : JSON.stringify(me.body));
-      // b) o mesmo item SEM token (item público costuma abrir sem auth)
-      const anon = await fetchMl(`/items/${parsed.id}`, {
-        'User-Agent': headers['User-Agent'],
-        Accept: 'application/json',
-      });
-      console.log('  /items sem token:', anon.status,
-        anon.status === 200 ? `-> title: ${anon.body.title}, price: ${anon.body.price}` : JSON.stringify(anon.body));
-      if (anon.status === 200) {
-        result = {
-          title: anon.body.title,
-          image: anon.body.pictures?.[0]?.url ?? anon.body.thumbnail,
-          price: anon.body.price,
-          currency: anon.body.currency_id,
-          source: 'items (sem token)',
-        };
-      }
-    }
-
-    console.log('\n=== RESULTADO FINAL (ML) ===');
-    console.log(result ?? 'Nenhum dado obtido.');
-  } catch (err) {
-    console.error('Erro Mercado Livre:', err.message);
+  // Camada 1: catálogo
+  if (productId) {
+    console.log('\n[camada 1] catálogo');
+    result = await mlCatalog(productId, headers, '1 - catálogo');
   }
+
+  // Camada 2: multiget pelo itemId
+  if (!result && itemId) {
+    console.log('\n[camada 2] multiget (/items?ids=)');
+    const attrs = 'id,title,price,currency_id,pictures,thumbnail,catalog_product_id';
+    const { status, body } = await fetchMl(`/items?ids=${itemId}&attributes=${attrs}`, headers);
+    const entry = Array.isArray(body) ? body[0] : null;
+    if (status === 200 && entry?.code === 200) {
+      result = {
+        camada: '2 - multiget',
+        title: entry.body.title,
+        image: entry.body.pictures?.[0]?.secure_url ?? entry.body.pictures?.[0]?.url ?? entry.body.thumbnail,
+        price: entry.body.price ?? null,
+        currency: entry.body.currency_id ?? null,
+        catalog_product_id: entry.body.catalog_product_id ?? null,
+      };
+    } else {
+      console.log('  corpo:', JSON.stringify(body));
+    }
+  }
+
+  // Camada 3: descobrir o catálogo pelo redirect da página
+  if (!result && !productId) {
+    console.log('\n[camada 3] descoberta por redirect da página');
+    const final = await followRedirects(url, isMlHost, 'Mercado Livre');
+    const found = final && isMlHost(hostOf(final)) ? new URL(final).pathname.match(/\/p\/(MLB\d+)/i)?.[1] : null;
+    if (found) {
+      console.log(`  catálogo descoberto: ${found.toUpperCase()}`);
+      result = await mlCatalog(found.toUpperCase(), headers, '3 - redirect + catálogo');
+    } else {
+      console.log('  o redirect não levou a uma página /p/MLB...');
+    }
+  }
+
+  console.log('\n=== RESULTADO FINAL (ML) ===');
+  console.log(
+    result ??
+      'Nenhuma camada trouxe dados — nesse caso o dono preenche tudo manualmente no formulário.',
+  );
 }
 
+// ---------------------------------------------------------------------------
+if (isAmazonShortHost(hostOf(url))) {
+  await testAmazonShortLink();
+}
 await testMicrolink();
 await testBrightData();
-await testMercadoLivre();
+if (isMlHost(hostOf(url))) {
+  await testMercadoLivre();
+}

@@ -55,6 +55,29 @@ export class MicrolinkService {
     }
   }
 
+  // Usado só pra resolver links encurtados (a.co, amzn.to) quando o redirect
+  // direto é bloqueado: o Microlink abre a página num navegador de verdade e
+  // devolve em "data.url" o endereço FINAL depois dos redirects. Devolve null
+  // em qualquer falha (nunca lança).
+  async fetchFinalUrl(url: string): Promise<string | null> {
+    const apiKey = process.env.MICROLINK_API_KEY;
+    const endpoint = new URL(ENDPOINT);
+    endpoint.searchParams.set('url', url);
+
+    try {
+      const response = await fetch(endpoint.toString(), {
+        headers: apiKey ? { 'x-api-key': apiKey } : {},
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      const json = await response.json();
+      if (!response.ok || json.status !== 'success') return null;
+      return typeof json.data?.url === 'string' ? json.data.url : null;
+    } catch (error) {
+      this.logger.warn(`Erro ao resolver URL final via Microlink: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
   private empty(): ProductMetadata {
     return { title: null, imageUrl: null, price: null, currency: null, source: null };
   }

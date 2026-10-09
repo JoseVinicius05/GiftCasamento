@@ -1,6 +1,6 @@
 # Sistema de Lista de Presentes por Evento — Planejamento MVP
 
-> **Revisão 3 — fechamento do Dia 3 da Sprint 3.**
+> **Revisão 4 — fechamento do Dia 4 da Sprint 3** (revisão 3: Dia 3).
 > Tudo que mudou em relação à versão anterior está marcado com **🔄 Alterado** ou **🆕 Novo**.
 > O motivo das mudanças: testes reais contra a API do Mercado Livre mostraram que o
 > `GET /items/{id}` é bloqueado para anúncios de outros vendedores (mesmo com OAuth) e que o
@@ -13,6 +13,7 @@
 | 1 | Início do projeto | Plano original do MVP |
 | 2 | Fim da Sprint 2 | Cotas via Pix; fim do "modo de pagamento" por evento; só Mercado Livre e Amazon |
 | 3 | Sprint 3, Dia 3 | Mercado Livre pelo **catálogo**, **sem preço automático** e **sem fallback Microlink**; Amazon via Bright Data; `GiftPreview`/`missingFields`; erro `UNSUPPORTED_ECOMMERCE` (422); riscos novos; ajustes nos Dias 3–5 da Sprint 3 |
+| 4 | Sprint 3, Dia 4 | CRUD de presentes (`POST/GET/PATCH`); **links encurtados da Amazon (`a.co`) suportados**; **ML sem `/p/MLB` em 3 camadas** (catálogo → multiget → descoberta por redirect; as duas últimas ainda **não validadas** contra o ML real); `resolvedUrl` no preview; regras de preço no `PATCH` |
 
 ---
 
@@ -31,7 +32,14 @@
   - **Amazon:** Bright Data (integração principal) com Microlink como fallback técnico.
   - Qualquer outra loja (Shopee, Magalu, etc.) retorna `422 UNSUPPORTED_ECOMMERCE` e cai direto
     pro preenchimento manual — não existe "tentar Microlink em qualquer URL" como suporte oficial.
-  - Links encurtados (`amzn.to`, `meli.la`) não são reconhecidos: o dono cola o link completo.
+  - 🆕 **Links encurtados da Amazon** (`a.co`, `amzn.to`, `amzn.eu`, `amzn.asia`) são aceitos: o
+    backend resolve o link completo antes de buscar (redirect direto; se a Amazon bloquear,
+    Microlink só pra descobrir a URL final). Se nada resolver: `422 SHORT_LINK_UNRESOLVED` e o
+    dono cola o link completo. O link **salvo** é sempre o completo (`/dp/ASIN`).
+  - 🆕 **Mercado Livre sem `/p/MLB`** (anúncio clássico `/MLB-123-titulo_JM`): tentativa em
+    camadas — multiget (`/items?ids=`) e descoberta do catálogo pelo redirect da página. **É
+    best-effort e ainda não foi validado em produção**; se nada funcionar, o dono preenche à mão.
+  - Links encurtados do **Mercado Livre** (`meli.la`, `mercadolivre.com/sec/`) continuam sem suporte.
 - Cada presente pode ser comprado por completo (via link do e-commerce ou Pix integral) ou por
   cotas parciais via Pix — múltiplos convidados contribuem até completar o valor.
 - 🆕 O valor do presente (**preço-alvo**) é sempre confirmado pelo dono no cadastro, venha
@@ -68,7 +76,7 @@ guest_password_hash, pix_key (SEMPRE obrigatória), created_at`
 auto | manual), status (enum: available | partially_funded | fully_funded | purchased_via_link
 | confirmed), created_at`
 
-> 🆕 `price` é obrigatório no banco. Como no Mercado Livre o preço nunca vem do auto-fetch,
+> 🆕 `product_url` salvo é o `resolvedUrl` do preview (nunca o link encurtado). `price` é obrigatório no banco. Como no Mercado Livre o preço nunca vem do auto-fetch,
 > o `POST /events/:slug/gifts` (Dia 4) **exige** que o dono informe o preço quando
 > `metadata.price` for nulo, gravando `price_source = 'manual'`.
 
@@ -99,6 +107,7 @@ interface ProductMetadata {
 interface GiftPreview extends ProductMetadata {
   store: 'mercadolivre' | 'amazon';
   missingFields: ('title' | 'imageUrl' | 'price')[]; // o que o dono precisa preencher
+  resolvedUrl: string; // 🆕 Dia 4: link completo do produto (≠ colado se era a.co) — é ESTE que se salva
 }
 ```
 
@@ -126,6 +135,10 @@ interface GiftPreview extends ProductMetadata {
    (+ Microlink) → formulário pré-preenchido com os campos que vieram; **campos que não vieram
    (sempre o preço no ML) ficam destacados e editáveis** → dono confirma/edita → salva.
    - Loja fora do escopo → `422 UNSUPPORTED_ECOMMERCE` → formulário manual com aviso próprio.
+   - 🆕 Link encurtado da Amazon que não resolve → `422 SHORT_LINK_UNRESOLVED` → manual, pedindo o
+     link completo.
+   - 🆕 Salvar: `POST /events/:slug/gifts` com título, **preço (obrigatório)**, `priceSource`,
+     `productUrl` (= `resolvedUrl`) e `imageUrl`; a lista do painel atualiza em seguida.
    - Falha de integração (token do ML inválido, timeout, 403) **nunca** vira erro 500: o preview
      volta com campos vazios e o dono preenche tudo manualmente.
 3. **Convidado acessa:** abre o link do evento → digita a senha → (primeiro acesso) digita o
@@ -144,8 +157,8 @@ interface GiftPreview extends ProductMetadata {
 - Confirmação de pagamento é 100% manual no v1 — atrito assumido para reduzir compliance.
 - 🆕 **`GET /items/{id}` do ML é bloqueado para anúncios de terceiros** (`403 access_denied`,
   mesmo com token válido). Dependemos do catálogo (`/products`), que só existe para links
-  `/p/MLB...`. **URLs clássicas de anúncio (`/MLB-123-titulo_JM`) provavelmente caem no modo
-  manual.** Se o ML mudar a política do catálogo, o ML inteiro vira manual — o sistema continua
+  `/p/MLB...`. **URLs clássicas de anúncio (`/MLB-123-titulo_JM`) têm só tentativas best-effort
+  (multiget e redirect, Dia 4), ainda não validadas; se falharem, caem no modo manual.** Se o ML mudar a política do catálogo, o ML inteiro vira manual — o sistema continua
   funcionando, só sem auto-preenchimento.
 - 🆕 **Preço-alvo digitado pelo dono pode ficar defasado** em relação à loja (preço sobe/desce
   depois do cadastro). As cotas seguem o valor cadastrado; o dono pode editar o preço no
@@ -155,7 +168,14 @@ interface GiftPreview extends ProductMetadata {
   presentes **não** é bloqueado — só perde o preenchimento automático.
 - 🆕 **Lock de refresh em memória** vale para um único processo do backend. Com mais de uma
   instância seria preciso lock distribuído (débito técnico documentado).
-- 🆕 **Links encurtados** (`amzn.to`, `meli.la`) não são suportados no MVP.
+- 🆕 **Links encurtados da Amazon dependem da Amazon deixar resolver.** Há relatos de que ela
+  bloqueia resolução automatizada; por isso a camada 2 (Microlink). O custo é 1 chamada extra de
+  Microlink quando o redirect direto falha. `meli.la` (ML) segue sem suporte.
+- 🆕 **Descoberta por redirect no ML** depende de o site responder a um cliente automatizado com
+  um redirect real (e não uma tela de verificação). Só lê o cabeçalho `Location`, nunca o HTML.
+- 🆕 **Janela entre `PATCH` de preço e criação de cota:** o backend impede baixar o preço abaixo do
+  reservado, mas uma cota pode entrar no mesmo instante. A Sprint 4 revalida o preço dentro da
+  transação da cota.
 - 🆕 **Custo/abuso do preview:** a rota aciona serviços pagos (Bright Data/Microlink). Mitigação:
   JWT + ownership antes de qualquer chamada externa, só domínios reconhecidos chegam nos
   provedores, e rate limit de 15 consultas/min por IP.
@@ -184,7 +204,7 @@ Premissa: 2 pessoas em backend (Nest/Postgres), 2 em frontend (Next.js), com rev
 |---|---|---|---|
 | 1 | Setup + fundamentos + login/autenticação | Repo, hosting no ar, schema inicial, cadastro/login em produção | ✅ |
 | 2 | Criação de evento | Evento (slug + senha de convidado), painel do evento | ✅ |
-| 3 | Cadastro de presentes + modelo de cotas | Formulário de presente (metadados + fallback manual), preço-alvo, schema de Contribution/EventExtraFunds | 🔄 em andamento (Dia 3 ✅) |
+| 3 | Cadastro de presentes + modelo de cotas | Formulário de presente (metadados + fallback manual), preço-alvo, schema de Contribution/EventExtraFunds | 🔄 em andamento (Dias 1–4 ✅) |
 | 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | — |
 | 5 | Pagamento manual + confirmação + saldo extra | Painel de confirmação, `EventExtraFunds`, e-mail/notificação simples | — |
 | 6 | Testes, polimento e go-live | Concorrência, UX, bugs, deploy final — **buffer** | — |
@@ -286,41 +306,62 @@ teste de autenticação do ML documentado (OAuth obrigatório).
 **Ponto de controle:** o preview funciona de ponta a ponta mesmo com o ML desconectado
 (devolve campos vazios).
 
-### Dia 4 (Quinta) — Salvar, editar, listar
+### Dia 4 (Quinta) — ✅ Concluído — Salvar, editar, listar + links novos
 
-- Dupla A: `POST /events/:slug/gifts` (salva os valores confirmados; 🔄 **exige `price`** — se
-  o preview não trouxe preço, o dono precisa informar; `priceSource = 'manual'` sempre que o
-  preço foi digitado); `GET /events/:slug/gifts`; `PATCH /events/:slug/gifts/:giftId`, com o
-  mesmo ownership check (404).
-- 🆕 Validação do `PATCH` de preço: não permitir reduzir o preço abaixo do que já está
-  reservado/confirmado em cotas.
-- Dupla B: botão "Salvar presente" no `AddGiftForm`; lista de presentes no painel (imagem,
-  título, preço, status); fluxo "colar link → preview → editar → salvar" de ponta a ponta.
-- Ambos juntos: testar com URLs reais de ML e Amazon, **incluindo** (a) link de catálogo do ML
-  (sem preço), (b) link clássico de anúncio do ML (deve cair no manual) e (c) produto da Amazon
-  sem preço.
+**Dupla A (backend):**
+
+- `POST /events/:slug/gifts` — **exige `price`** (> 0, até 2 casas); `priceSource` `auto`|`manual`;
+  `productUrl`/`imageUrl` opcionais e só `http`/`https`. O `eventId` vem sempre do evento do dono.
+- `GET /events/:slug/gifts` — mais recente primeiro, com `reservedAmount` (confirmadas + pendentes
+  ainda dentro das 48h).
+- `PATCH /events/:slug/gifts/:giftId` — presente de outro evento = 404 (padrão). Mudar o preço marca
+  `priceSource = manual`, **não pode ficar abaixo do reservado (409)** e **não muda após
+  `fully_funded` / `purchased_via_link` / `confirmed` (409)**. `null` apaga link/imagem. Título,
+  link e imagem seguem editáveis em qualquer estágio.
+- 🆕 **Amazon `a.co`/`amzn.to`:** `AmazonShortLinkService` (redirect manual só em hosts de
+  encurtador + fallback Microlink pela URL final) → link canônico `/dp/ASIN`; `resolvedUrl` no preview.
+- 🆕 **ML sem `/p/MLB`:** `MercadoLivreService` em 3 camadas (catálogo → multiget → descoberta de
+  catálogo por redirect).
+- Testes: `GiftsService`, camadas do ML, `discoverCatalogId`, encurtador da Amazon, `MetadataService`.
+
+**Dupla B (frontend):**
+
+- Botão **"Salvar presente"** no `AddGiftForm`: valida nome e preço (aceita `249,90`, `1.299,90`,
+  `R$ 80`), manda `priceSource = auto` só se o preço do auto-fetch não foi alterado.
+- `GiftList` no painel: cards com imagem, preço, status em português, "Ver na loja" e **edição
+  inline** (nome/preço); preço travado nos estágios em que o backend recusa.
+- Estados de erro: lista que não carrega não derruba o painel; 409 do preço mostra a mensagem do
+  backend; mensagem própria para `SHORT_LINK_UNRESOLVED`.
+
+**Não validado ainda (fazer no Dia 5, em produção):** multiget e redirect do ML; resolução do `a.co`.
+O log do backend diz qual camada funcionou; `test-product-metadata.mjs` testa cada uma localmente.
 
 ### Dia 5 (Sexta) — Testes, documentação e fecho
 
-- Os testes do módulo de metadados já nasceram no Dia 3 (mockando `fetch`; nunca batem nas APIs
-  reais). Sobra: testes do CRUD de `Gift` e do endpoint de preview (ownership, 401, 422, 400).
+- 🔄 Os testes dos serviços (metadados e `GiftsService`) já existem (mockando `fetch`; nunca batem
+  nas APIs reais). Sobra: testes de **controller/DTOs** — preview e CRUD (ownership, 401, 422, 400,
+  validação de preço e de URL com `javascript:`).
+- 🆕 **Validação em produção** das camadas novas: ML de catálogo, ML clássico (qual camada
+  respondeu?), Amazon completa e `a.co`. Registrar o resultado aqui e, se o multiget/redirect do ML
+  não funcionarem, **remover as camadas** (menos código) em vez de manter tentativas que sempre falham.
 - Atualizar README/CLAUDE.md com o CRUD de presentes. Variáveis de ambiente do módulo:
   `MICROLINK_API_KEY`, `BRIGHTDATA_API_KEY`, `MERCADOLIVRE_CLIENT_ID`,
   `MERCADOLIVRE_CLIENT_SECRET`, `MERCADOLIVRE_REDIRECT_URI`, `MERCADOLIVRE_SETUP_KEY`.
 
 ### 🔄 Checklist de saída da Sprint 3
 
-- [ ] Dono cadastra presente colando link do **Mercado Livre (catálogo)** ou **Amazon**, com
-      preview auto-preenchido de título e imagem
+- [x] Dono cadastra presente colando link do **Mercado Livre (catálogo)** ou **Amazon** (inclui
+      `a.co`), com preview auto-preenchido de título e imagem
 - [ ] 🔄 **No ML, o preço é digitado pelo dono** e o formulário avisa isso de forma clara
       (sem tom de erro)
 - [ ] URL de outra loja retorna mensagem clara de "não suportado", sem travar o manual
-- [ ] Campos que não vieram ficam editáveis, sem travar o cadastro
-- [ ] Dono edita e lista os presentes do seu evento
-- [ ] Ownership check nos endpoints de presente segue o padrão 404
+- [x] Campos que não vieram ficam editáveis, sem travar o cadastro
+- [x] Dono edita e lista os presentes do seu evento
+- [x] Ownership check nos endpoints de presente segue o padrão 404
 - [ ] Refresh automático do token do ML comprovadamente funcionando, sem token em log
 - [ ] 🔄 2–3 URLs reais de cada loja testadas manualmente (ML: catálogo e clássica; Amazon)
 - [ ] Tudo testado em produção
+- [x] CRUD de presentes com preço obrigatório e regras de `PATCH` (Dia 4)
 - [x] Token service com refresh concorrente, retry único de 401 e `invalid_grant` sem bloquear
       o cadastro (Dia 3)
 - [x] Preview real com `UNSUPPORTED_ECOMMERCE` distinto de "campo não veio" (Dia 3)
@@ -331,11 +372,15 @@ Sprint 4.
 
 ### Pontos em aberto
 
-- 🆕 **Preço automático do Mercado Livre:** hoje inviável pela API oficial. Opções futuras
-  (fora do MVP): Bright Data para o ML, ou aceitar o preço manual definitivamente. Decidir
-  depois de ver como os donos reagem ao preço manual.
-- 🆕 **Links encurtados** (`amzn.to`, `meli.la`): resolver o redirect no backend (com
-  validação de domínio) ou continuar pedindo o link completo?
-- 🆕 **Anúncios clássicos do ML** (sem `/p/MLB…`): aceitar que sempre caem no manual?
+- 🔄 **Camadas novas do ML sem `/p/MLB`** (multiget e redirect): validar em produção. Se nenhuma
+  funcionar, decidir se aceitamos que anúncios clássicos são sempre manuais (e remover as camadas).
+- 🔄 **`a.co` em produção:** conferir no log se resolve por redirect direto ou só via Microlink — se
+  sempre precisar do Microlink, avaliar o custo.
+- 🆕 **Excluir presente:** não está no planejamento do MVP. O dono hoje só consegue editar. Decidir
+  se entra (e como tratar presente que já tem cotas).
+- 🆕 **Links encurtados do ML** (`meli.la`): resolver com a mesma técnica ou continuar pedindo o
+  link completo?
+- **Preço automático do Mercado Livre:** inviável pelo catálogo. Só viria do multiget, se
+  funcionar. Caso contrário, aceitar o preço manual como definitivo.
 - Nome/domínio do produto ("WebGift" ainda não confirmado).
 - Página pública do convidado, ainda mockada (Sprint 4).

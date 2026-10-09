@@ -1,6 +1,8 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
+import { firstApiMessage, parsePriceInput } from '../../../lib/gifts';
 
 // Sprint 3 — Dia 3 (Dupla B): o preview agora é REAL — chama
 // /api/events/[slug]/gifts/preview (BFF), que repassa pro backend.
@@ -13,7 +15,8 @@ import { useState, type FormEvent } from 'react';
 //   auto-fetch não trouxe tudo. É o caso NORMAL — no Mercado Livre o preço
 //   nunca vem. Não é erro: o campo só fica destacado pra o dono preencher.
 //
-// O botão "Salvar presente" só chega no Dia 4 (POST /events/:slug/gifts).
+// Dia 4: o botão "Salvar presente" grava via POST /api/events/[slug]/gifts e,
+// em seguida, router.refresh() atualiza a lista de presentes da página.
 
 type MissingField = 'title' | 'imageUrl' | 'price';
 
@@ -25,6 +28,8 @@ type PreviewResponse = {
   source: string | null;
   store: 'mercadolivre' | 'amazon';
   missingFields: MissingField[];
+  // Link completo do produto (igual ao colado, exceto links encurtados como a.co).
+  resolvedUrl: string;
 };
 
 type ApiErrorBody = {
@@ -99,6 +104,12 @@ export default function AddGiftForm({ slug }: { slug: string }) {
   const [price, setPrice] = useState('');
   const [notice, setNotice] = useState<Notice | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
+  const [autoPrice, setAutoPrice] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedTitle, setSavedTitle] = useState<string | null>(null);
+  const router = useRouter();
 
   function resetResult() {
     setError(null);
@@ -109,6 +120,10 @@ export default function AddGiftForm({ slug }: { slug: string }) {
     setTitle('');
     setImageUrl('');
     setPrice('');
+    setResolvedUrl(null);
+    setAutoPrice(null);
+    setSaveError(null);
+    setSavedTitle(null);
   }
 
   function startManual(message?: Notice) {
@@ -144,6 +159,8 @@ export default function AddGiftForm({ slug }: { slug: string }) {
         setTitle(preview.title ?? '');
         setImageUrl(preview.imageUrl ?? '');
         setPrice(preview.price !== null ? String(preview.price).replace('.', ',') : '');
+        setResolvedUrl(preview.resolvedUrl);
+        setAutoPrice(preview.price);
         setNotice(buildMissingNotice(preview));
         setMode('preview');
         return;
@@ -157,6 +174,16 @@ export default function AddGiftForm({ slug }: { slug: string }) {
           text:
             'Essa loja ainda não tem preenchimento automático — por enquanto só Mercado Livre ' +
             'e Amazon. Preencha os dados do presente manualmente.',
+        });
+        return;
+      }
+
+      if (response.status === 422 && body.code === 'SHORT_LINK_UNRESOLVED') {
+        startManual({
+          kind: 'warning',
+          text:
+            firstApiMessage(body, '') ||
+            'Não conseguimos abrir esse link encurtado. Cole o link completo do produto ou preencha manualmente.',
         });
         return;
       }
@@ -176,6 +203,64 @@ export default function AddGiftForm({ slug }: { slug: string }) {
       setError('Não foi possível falar com o servidor. Tente de novo ou preencha manualmente.');
     } finally {
       setIsSearching(false);
+    }
+  }
+
+  async function handleSave() {
+    setSaveError(null);
+
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) {
+      setSaveError('Dê um nome para o presente.');
+      return;
+    }
+
+    const parsedPrice = parsePriceInput(price);
+    if (parsedPrice === null) {
+      setSaveError('Informe um preço válido, por exemplo 249,90.');
+      return;
+    }
+
+    // Link que vai ficar salvo (é pra ele que o convidado clica pra comprar):
+    // no modo preview, o link já resolvido pelo backend; no manual, o que o
+    // dono colou, se for um link válido.
+    const typedUrl = url.trim();
+    const productUrl =
+      mode === 'preview' ? resolvedUrl ?? typedUrl : isLikelyUrl(typedUrl) ? typedUrl : undefined;
+
+    // "auto" só se o preço veio do serviço E o dono não mexeu nele.
+    const priceSource = mode === 'preview' && autoPrice !== null && autoPrice === parsedPrice ? 'auto' : 'manual';
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/events/${slug}/gifts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: trimmedTitle,
+          price: parsedPrice,
+          priceSource,
+          ...(productUrl && { productUrl }),
+          ...(imageUrl.trim() && { imageUrl: imageUrl.trim() }),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        resetResult();
+        setUrl('');
+        setSavedTitle(trimmedTitle);
+        router.refresh();
+        return;
+      }
+
+      if (response.status === 401) setSaveError('Sua sessão expirou. Entre de novo para continuar.');
+      else if (response.status === 404) setSaveError('Evento não encontrado.');
+      else setSaveError(firstApiMessage(data, 'Não foi possível salvar agora. Tente de novo.'));
+    } catch {
+      setSaveError('Não foi possível falar com o servidor. Tente de novo.');
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -298,10 +383,25 @@ export default function AddGiftForm({ slug }: { slug: string }) {
         </div>
       )}
 
-      <p className="mt-4 text-xs text-gray-400">
-        Evento: <span className="font-medium text-gray-500">{slug}</span> · o botão &quot;Salvar
-        presente&quot; chega no Dia 4 desta sprint, junto com o cadastro real.
-      </p>
+      {showForm && (
+        <div className="mt-4">
+          {saveError && <p className="mb-2 text-sm text-red-600">{saveError}</p>}
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            className="w-full rounded-xl bg-pink-500 px-6 py-3 font-semibold text-white transition hover:bg-pink-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSaving ? 'Salvando...' : 'Salvar presente'}
+          </button>
+        </div>
+      )}
+
+      {savedTitle && !showForm && (
+        <p className="mt-4 rounded-xl bg-green-50 px-4 py-3 text-sm text-green-700">
+          Presente &quot;{savedTitle}&quot; adicionado à lista ✅
+        </p>
+      )}
     </div>
   );
 }
