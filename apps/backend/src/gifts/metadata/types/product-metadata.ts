@@ -29,4 +29,9 @@ export type MissingField = 'title' | 'imageUrl' | 'price';
 export interface GiftPreview extends ProductMetadata {
   store: SupportedStore;
   missingFields: MissingField[];
+  // URL "de verdade" do produto. É a mesma que o dono colou, EXCETO quando
+  // era um link encurtado (ex: a.co) — nesse caso é o link completo
+  // resolvido. É ESSE valor que o frontend deve salvar em Gift.productUrl,
+  // porque é pra ele que o convidado vai clicar na hora de comprar.
+  resolvedUrl: string;
 }

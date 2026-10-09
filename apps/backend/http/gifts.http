@@ -72,3 +72,100 @@ Content-Type: application/json
 {
   "url": "https://www.mercadolivre.com.br/x/p/MLB67008669"
 }
+
+### ---------------------------------------------------------------------
+### Dia 4 — CRUD de presentes + links novos
+### ---------------------------------------------------------------------
+
+### 8) Preview de link ENCURTADO da Amazon (a.co)
+### Esperado: 200, store "amazon", "resolvedUrl" = https://www.amazon.com.br/dp/ASIN
+### Se a Amazon bloquear a resolução: 422 com code "SHORT_LINK_UNRESOLVED"
+### (olhe o log do backend: "resolvido via redirect direto" ou "via Microlink")
+POST {{baseUrl}}/events/{{slug}}/gifts/preview
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "url": "https://a.co/d/0gcrIYNQ"
+}
+
+### 9) Preview de link do ML SEM /p/MLB (anúncio clássico)
+### Esperado: depende do que o ML permitir. Veja no log qual camada funcionou:
+###   "dados obtidos pelo multiget"  ou  "Catálogo ... descoberto pelo redirect"
+###   ou "nenhuma camada trouxe dados" (aí vem tudo vazio → modo manual)
+POST {{baseUrl}}/events/{{slug}}/gifts/preview
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "url": "https://produto.mercadolivre.com.br/MLB-COLE-UM-ID-REAL-titulo_JM"
+}
+
+### 10) Criar presente
+### Esperado: 201 com o presente (price como NÚMERO, status "available", reservedAmount 0)
+# @name createGift
+POST {{baseUrl}}/events/{{slug}}/gifts
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "title": "Liquidificador Arno Power Max",
+  "price": 249.9,
+  "priceSource": "manual",
+  "productUrl": "https://www.mercadolivre.com.br/liquidificador/p/MLB67008669",
+  "imageUrl": "https://http2.mlstatic.com/D_NQ_NP_000000-MLA00000000000_000000-F.jpg"
+}
+
+### 11) Criar presente com dados inválidos
+### Esperado: 400 com mensagens (preço <= 0, mais de 2 casas decimais, link com javascript:, título vazio...)
+POST {{baseUrl}}/events/{{slug}}/gifts
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "title": "",
+  "price": -5,
+  "priceSource": "manual",
+  "productUrl": "javascript:alert(1)"
+}
+
+### 12) Listar presentes do evento
+### Esperado: 200, lista (mais recente primeiro) com "reservedAmount"
+GET {{baseUrl}}/events/{{slug}}/gifts
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 13) Editar presente (título e preço)
+### Esperado: 200; ao mudar o preço, "priceSource" vira "manual" sozinho
+PATCH {{baseUrl}}/events/{{slug}}/gifts/{{createGift.response.body.id}}
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "title": "Liquidificador Arno (novo nome)",
+  "price": 279.9
+}
+
+### 14) Editar presente que não existe / é de outro evento
+### Esperado: 404 "Presente não encontrado"
+PATCH {{baseUrl}}/events/{{slug}}/gifts/00000000-0000-4000-8000-000000000000
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "title": "qualquer"
+}
+
+### 15) Editar com id que nem é UUID
+### Esperado: 400 (validação do parâmetro)
+PATCH {{baseUrl}}/events/{{slug}}/gifts/abc
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+
+{
+  "title": "qualquer"
+}
+
+### 16) Listar presentes de um evento que não é seu
+### Esperado: 404 "Evento não encontrado" (nunca 403)
+GET {{baseUrl}}/events/slug-que-nao-existe/gifts
+Authorization: Bearer {{login.response.body.accessToken}}

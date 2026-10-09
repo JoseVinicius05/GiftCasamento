@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation';
 import { TOKEN_COOKIE } from '../../../lib/auth-cookie';
 import EditEventForm from './EditEventForm';
 import AddGiftForm from './AddGiftForm';
+import GiftList from './GiftList';
+import type { Gift } from '../../../lib/gifts';
 
 type EventTypeValue = 'casamento' | 'aniversario' | 'cha_de_bebe' | 'cha_de_cozinha' | 'outro';
 
@@ -86,6 +88,24 @@ export default async function PainelEventoPage({
   // O input type="date" espera "YYYY-MM-DD"; o backend manda um ISO completo.
   const eventDateForInput = event.eventDate.slice(0, 10);
 
+  // Presentes do evento. Se essa chamada falhar, o painel NÃO quebra: mostra
+  // o evento normalmente e um aviso no lugar da lista.
+  let gifts: Gift[] = [];
+  let giftsLoadFailed = false;
+  try {
+    const giftsResponse = await fetch(`${apiUrl}/events/${slug}/gifts`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (giftsResponse.ok) {
+      gifts = await giftsResponse.json();
+    } else {
+      giftsLoadFailed = true;
+    }
+  } catch {
+    giftsLoadFailed = true;
+  }
+
   return (
     <main className="min-h-screen bg-[#fff8fb] px-4 py-10">
       <div className="mx-auto max-w-2xl space-y-6">
@@ -104,14 +124,11 @@ export default async function PainelEventoPage({
           </div>
         </div>
 
-        {/* Sprint 3, Dia 1: casca da tela de adicionar presente (preview mock).
-            Integração real com o serviço de metadados e o endpoint de
-            criação chegam nos próximos dias desta sprint. */}
+        {/* Sprint 3, Dia 3/4: preview real + salvar. Depois de salvar, o
+            formulário chama router.refresh() e a lista abaixo atualiza. */}
         <AddGiftForm slug={event.slug} />
 
-        <div className="rounded-2xl border-2 border-dashed border-pink-200 bg-white/60 p-6 text-center text-gray-500">
-          A listagem dos presentes já cadastrados chega no Dia 3/4 desta sprint.
-        </div>
+        <GiftList slug={event.slug} gifts={gifts} loadFailed={giftsLoadFailed} />
 
         <EditEventForm
           slug={event.slug}

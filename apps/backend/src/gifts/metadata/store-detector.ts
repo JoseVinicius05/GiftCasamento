@@ -1,3 +1,4 @@
+import { isAmazonShortLink } from './amazon/amazon-url';
 import { SupportedStore } from './types/product-metadata';
 
 // Decide de qual loja é a URL só olhando o HOSTNAME (nunca o caminho ou a
@@ -6,8 +7,11 @@ import { SupportedStore } from './types/product-metadata';
 // ninguém consegue usar o endpoint de preview pra fazer um serviço pago
 // buscar uma URL qualquer.
 //
-// Limitação conhecida do MVP: links encurtados (amzn.to, a.co, meli.la)
-// NÃO são reconhecidos — o dono precisa colar o link completo do produto.
+// Links encurtados:
+// - Amazon (a.co, amzn.to, amzn.eu, amzn.asia): SUPORTADOS — o
+//   MetadataService resolve o link completo antes de buscar os dados.
+// - Mercado Livre (meli.la, mercadolivre.com/sec/...): NÃO suportados ainda;
+//   o dono precisa colar o link completo do produto.
 const MERCADO_LIVRE_HOST = /(^|\.)mercadolivre\.com\.br$/i;
 const AMAZON_HOST = /(^|\.)amazon\.com(\.br)?$/i;
 
@@ -22,6 +26,6 @@ export function detectStore(rawUrl: string): SupportedStore | null {
   }
 
   if (MERCADO_LIVRE_HOST.test(hostname)) return 'mercadolivre';
-  if (AMAZON_HOST.test(hostname)) return 'amazon';
+  if (AMAZON_HOST.test(hostname) || isAmazonShortLink(rawUrl)) return 'amazon';
   return null;
 }

@@ -52,6 +52,26 @@ Não existe atalho sem autenticação. Ver `MercadoLivreToken` no modelo de dado
   de presente: o preview devolve campos vazios e o log pede pra refazer
   `GET /auth/mercadolivre/connect`.
 
+**Decisões do Dia 4 da Sprint 3:**
+- **ML sem `/p/MLB`**: o `MercadoLivreService` tem 3 camadas — catálogo (único
+  confirmado), multiget `GET /items?ids=` e descoberta do catálogo pelo header
+  `Location` da página do anúncio. As duas últimas **não foram validadas contra o
+  ML real** (sem rede no desenvolvimento): o log diz qual camada funcionou, e o
+  `apps/backend/test-product-metadata.mjs` testa cada uma. Nunca ler/raspar o HTML.
+- **Links encurtados da Amazon** (`a.co`, `amzn.to`, `amzn.eu`, `amzn.asia`) são
+  suportados: redirect manual (só em hosts de encurtador, abortando qualquer
+  redirect pra fora) e, se a Amazon bloquear, Microlink só pra descobrir a URL
+  final. Falhou → `422 SHORT_LINK_UNRESOLVED`. Encurtadores do ML continuam sem suporte.
+- O preview devolve `resolvedUrl`; o frontend salva ESSE valor em `Gift.productUrl`
+  (link completo), nunca o link encurtado.
+- CRUD de `Gift` (`POST/GET/PATCH /events/:slug/gifts`): `eventId` sempre vem do
+  evento do dono; presente de outro evento = 404; `price` obrigatório (> 0, 2
+  casas); mudar preço → `priceSource = 'manual'`; preço não pode cair abaixo do
+  reservado (409) nem mudar após `fully_funded`/`purchased_via_link`/`confirmed`
+  (409). Sem exclusão no MVP. `productUrl`/`imageUrl` só `http`/`https`.
+- Sprint 4 deve revalidar, dentro da transação da cota, que o preço atual cobre o
+  valor reservado (há uma janela entre o PATCH de preço e a criação de cotas).
+
 ### Decisão tomada durante a Sprint 2 (corrige o que o planejamento original dizia)
 **Não existe "modo de pagamento" por evento.** O dono só cadastra a chave Pix
 (sempre obrigatória, usada pra gerar QR codes). Link da loja é um dado de cada
@@ -104,9 +124,15 @@ em uso na UI é "WebGift" (ainda não confirmada como nome final).
 - Frontend: `AddGiftForm` usa o preview real; diferencia "e-commerce não
   suportado" de "campo não veio" (`missingFields`).
 
-### Ainda não implementado (Sprint 3, dias seguintes)
-- CRUD de `Gift` (`POST`/`GET`/`PATCH /events/:slug/gifts...`) e o botão
-  "Salvar presente" no frontend (Dia 4).
+### Implementado no Dia 4 da Sprint 3
+- `GiftsService` + `POST/GET/PATCH /events/:slug/gifts`; `AddGiftForm` salva de
+  verdade; `GiftList` (lista + edição inline) no painel do evento.
+- Amazon: links encurtados. ML: camadas extras pra links sem `/p/MLB`.
+
+### Ainda não implementado (Sprint 3, Dia 5 em diante)
+- Testes do endpoint de preview e dos DTOs de presente; validação em produção
+  das camadas novas do ML e do `a.co`.
+- Exclusão de presente (não está no planejamento do MVP — decidir se entra).
 
 **Regra crítica de concorrência (Sprint 3+)**: valor disponível de um `Gift` =
 `price - SUM(amount de Contribution com status pending ou confirmed)`. Toda nova
