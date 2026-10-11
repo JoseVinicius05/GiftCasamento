@@ -38,7 +38,7 @@ export class GiftsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventsService: EventsService,
-  ) {}
+  ) { }
 
   // Todos os métodos começam por findBySlugForOwner: 404 (nunca 403) se o
   // evento não existe OU é de outro dono — mesmo padrão do módulo de eventos.
@@ -125,6 +125,50 @@ export class GiftsService {
 
     const updated = await this.prisma.gift.update({ where: { id: gift.id }, data });
     return toGiftResponse(updated, reserved);
+  }
+
+
+
+  async remove(slug: string, giftId: string, ownerId: string): Promise<void> {
+    // Confirma que o evento existe e pertence ao usuário autenticado.
+    const event = await this.eventsService.findBySlugForOwner(slug, ownerId);
+
+    // O presente precisa pertencer ao evento informado.
+    const gift = await this.prisma.gift.findFirst({
+      where: {
+        id: giftId,
+        eventId: event.id,
+      },
+    });
+
+    if (!gift) {
+      throw new NotFoundException('Presente não encontrado');
+    }
+
+    // Preserva presentes que já avançaram no fluxo de pagamento ou compra.
+    if (gift.status !== 'available') {
+      throw new ConflictException(
+        'Este presente não pode ser excluído porque já possui movimentação ou histórico de pagamento/compra.',
+      );
+    }
+
+    // Verifica TODAS as contribuições, inclusive as expiradas.
+    // Não apagamos o histórico financeiro dos convidados.
+    const contributionCount = await this.prisma.contribution.count({
+      where: { giftId: gift.id },
+    });
+
+    if (contributionCount > 0) {
+      throw new ConflictException(
+        'Este presente possui histórico de contribuições e não pode ser excluído.',
+      );
+    }
+
+    // O schema define onDelete: SetNull para EventExtraFunds.sourceGift.
+    // Assim, o histórico de saldo extra permanece mesmo após a exclusão.
+    await this.prisma.gift.delete({
+      where: { id: gift.id },
+    });
   }
 
   // Soma, por presente, das cotas que "seguram" valor: confirmadas, mais as

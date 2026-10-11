@@ -101,7 +101,7 @@ export default async function MeusEventosPage() {
   const events: Event[] = await response.json();
 
   return (
-    <main className="relative min-h-screen overflow-hidden px-4 py-8 md:px-8 md:py-10">
+    <main className="relative min-h-dvh w-full min-w-0 overflow-x-clip bg-[#fff8fb] px-3 py-5 sm:px-5 sm:py-8 md:px-8 md:py-10">
       {/* =========================================================
           BACKGROUND
       ========================================================= */}
@@ -150,7 +150,7 @@ export default async function MeusEventosPage() {
 
           {/* Novo evento */}
           <Link
-            href="/criar-casamento"
+            href="/criar-evento"
             className="group inline-flex items-center gap-2 rounded-xl bg-[#c4777d] px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#b66b72] hover:shadow-lg md:px-5 md:py-3"
           >
             <span className="text-lg leading-none">+</span>
@@ -223,7 +223,7 @@ export default async function MeusEventosPage() {
 
             {/* Botão */}
             <Link
-              href="/criar-casamento"
+              href="/criar-evento"
               className="mt-7 inline-flex items-center gap-2 rounded-xl bg-[#c4777d] px-6 py-3 font-semibold text-white shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#b66b72] hover:shadow-lg"
             >
               Criar meu primeiro evento
@@ -236,7 +236,7 @@ export default async function MeusEventosPage() {
              LISTA DE EVENTOS
           ===================================================== */
 
-          <ul className="grid gap-5 md:grid-cols-2">
+          <ul className="grid min-w-0 grid-cols-1 gap-4 sm:gap-5 md:grid-cols-2">
             {events.map((event) => {
               const Icon = EVENT_TYPE_ICONS[event.eventType];
 
