@@ -198,7 +198,7 @@ ambiente, ele mostra qual ID foi extraído e o que cada endpoint respondeu.
   por minuto no `/events/:slug/access` (senha de convidado é mais curta,
   então mais fácil de tentar força bruta), contra força bruta.
 - Middleware no Next barrando o acesso a rotas autenticadas (`/dashboard`,
-  `/criar-casamento`, `/meus-eventos`, `/eventos`) antes mesmo da página
+  `/criar-evento`, `/meus-eventos`, `/eventos`) antes mesmo da página
   carregar, caso não haja o cookie.
 - `GET`/`PATCH /events/:slug` sempre retornam `404` (nunca `403`) tanto se
   o evento não existe quanto se pertence a outro dono — evita que alguém

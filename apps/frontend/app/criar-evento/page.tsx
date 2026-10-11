@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Eye, EyeOff, CalendarDays, Gift, KeyRound, Link as LinkIcon } from "lucide-react";
 import {
+  ArrowLeft,
   ChevronDown,
   Check,
   Heart,
@@ -11,10 +11,14 @@ import {
   Baby,
   Utensils,
   Sparkles,
-} from "lucide-react";
-import {
   ChevronLeft,
   ChevronRight,
+  Eye,
+  EyeOff,
+  CalendarDays,
+  Gift,
+  KeyRound,
+  Link as LinkIcon,
 } from "lucide-react";
 
 function gerarSlug(texto: string) {
@@ -45,8 +49,22 @@ const EVENT_ICONS = {
   outro: Sparkles,
 };
 
+const months = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
+];
 
-
+const weekDays = ["D", "S", "T", "Q", "Q", "S", "S"];
 
 export default function CriarCasamentoPage() {
   const router = useRouter();
@@ -61,45 +79,26 @@ export default function CriarCasamentoPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const labelClass = "mb-2 block text-sm font-semibold text-gray-700"
 
   function handleTitleChange(valor: string) {
     setTitle(valor);
     setSlug(gerarSlug(valor));
   }
 
-  const months = [
-    "Janeiro",
-    "Fevereiro",
-    "Março",
-    "Abril",
-    "Maio",
-    "Junho",
-    "Julho",
-    "Agosto",
-    "Setembro",
-    "Outubro",
-    "Novembro",
-    "Dezembro",
-  ];
-
-  const weekDays = ["D", "S", "T", "Q", "Q", "S", "S"];
-
   function getDaysInMonth(date: Date) {
     const year = date.getFullYear();
     const month = date.getMonth();
-
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-
     const days = [];
 
     for (let i = 0; i < firstDay; i++) {
       days.push(null);
     }
-
     for (let day = 1; day <= daysInMonth; day++) {
       days.push(day);
     }
@@ -181,7 +180,7 @@ export default function CriarCasamentoPage() {
 
       if (!response.ok) {
         if (response.status === 401) {
-          router.push("/login?redirectTo=/criar-casamento");
+          router.push("/login?redirectTo=/criar-evento");
           return;
         }
 
@@ -206,9 +205,7 @@ export default function CriarCasamentoPage() {
   return (
     <main className="relative min-h-dvh w-full overflow-hidden px-4 py-10">
 
-      {/* ========================================= */}
       {/* BACKGROUND */}
-      {/* ========================================= */}
 
       <div
         className="fixed inset-0 -z-20 bg-[#fff7f8] bg-cover bg-center bg-no-repeat"
@@ -223,9 +220,7 @@ export default function CriarCasamentoPage() {
       {/* Blur */}
       <div className="fixed inset-0 -z-10 backdrop-blur-[1px]" />
 
-      {/* ========================================= */}
       {/* DECORAÇÕES */}
-      {/* ========================================= */}
 
       <div
         className="
@@ -255,101 +250,74 @@ export default function CriarCasamentoPage() {
         "
       />
 
-      {/* ========================================= */}
       {/* CONTEÚDO */}
-      {/* ========================================= */}
 
       <div className="relative mx-auto w-full max-w-3xl">
 
-        {/* ========================================= */}
         {/* CABEÇALHO */}
-        {/* ========================================= */}
 
-        <div className="mb-8 text-center">
+        <div className="mb-8">
+          <div className="mb-6 flex justify-start">
+            <button
+              type="button"
+              onClick={() => router.push("/meus-eventos")}
+              className="group inline-flex min-h-10 max-w-full items-center gap-2 rounded-xl border border-[#e8caca]/70 bg-white/80 px-3 py-2 text-sm font-medium text-[#8e6568] shadow-sm transition-all duration-200 hover:border-[#c4777d]/50 hover:bg-[#fff0f1] hover:text-[#b47b7f] focus:outline-none focus:ring-4 focus:ring-[#b47b7f]/20 sm:px-4"
+            >
+              <ArrowLeft
+                size={17}
+                className="shrink-0 transition-transform duration-200 group-hover:-translate-x-1"
+              />
+            </button>
+          </div>
 
-          <h1 className="font-serif text-5xl tracking-tight text-[#302b28]">
-            Web<span className="italic text-[#b47b7f]">Gift</span>
-          </h1>
+          <div className="text-center">
+            <h1 className="font-serif text-4xl tracking-tight text-[#302b28] sm:text-5xl">
+              Web<span className="italic text-[#b47b7f]">Gift</span>
+            </h1>
 
-          <p className="mt-2 text-gray-500">
-            Crie a página do seu evento
-          </p>
+            <p className="mt-2 text-gray-500">
+              Crie a página do seu evento
+            </p>
 
-          <p className="mt-1 text-sm text-gray-400">
-            Preencha os dados abaixo. Você poderá alterar tudo depois.
-          </p>
-
+            <p className="mt-1 text-sm text-gray-400">
+              Preencha os dados abaixo. Você poderá alterar tudo depois.
+            </p>
+          </div>
         </div>
 
-        {/* ========================================= */}
         {/* CARD */}
-        {/* ========================================= */}
 
         <section
-          className="
-            rounded-[28px]
-            border
-            border-white/70
-            bg-white/75
-            p-6
-            shadow-2xl
-            backdrop-blur-xl
-            md:p-10
-          "
+          className="rounded-[28px] border border-white/70 bg-white/75 p-6 shadow-2xl backdrop-blur-xl md:p-10"
         >
 
           <form
             className="space-y-7"
             onSubmit={handleSubmit}
           >
-
-            {/* ========================================= */}
             {/* ERRO */}
-            {/* ========================================= */}
 
             {error && (
               <div
-                className="
-                  rounded-xl
-                  border
-                  border-red-200
-                  bg-red-50/90
-                  px-4
-                  py-3
-                  text-sm
-                  text-red-600
-                "
+                className="rounded-xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-600"
               >
                 {error}
               </div>
             )}
 
-            {/* ========================================= */}
             {/* TIPO DE EVENTO */}
-            {/* ========================================= */}
 
             <div>
-
               <label
                 htmlFor="eventType"
-                className="mb-2 block text-sm font-semibold text-gray-700"
+                className={labelClass}
               >
                 Tipo de evento
               </label>
 
               <div className="relative">
-
                 <Gift
-                  className="
-                    pointer-events-none
-                    absolute
-                    left-4
-                    top-1/2
-                    h-5
-                    w-5
-                    -translate-y-1/2
-                    text-[#b47b7f]
-                  "
+                  className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#b47b7f]"
                 />
                 <div className="relative">
 
@@ -357,26 +325,11 @@ export default function CriarCasamentoPage() {
                   <button
                     type="button"
                     onClick={() => setEventOpen(!eventOpen)}
-                    className={`
-      flex
-      w-full
-      items-center
-      justify-between
-      rounded-xl
-      border
-      bg-white/80
-      px-4
-      py-3
-      text-left
-      outline-none
-      transition-all
-      duration-200
-      ${eventOpen
-                        ? "border-[#c4777d] ring-2 ring-[#c4777d]/20"
-                        : "border-gray-300 hover:border-[#d5a0a4]"
+                    className={`flex w-full items-center justify-between rounded-xl border bg-white/80 px-4 py-3 text-left outline-none transition-all duration-200      ${eventOpen
+                      ? "border-[#c4777d] ring-2 ring-[#c4777d]/20"
+                      : "border-gray-300 hover:border-[#d5a0a4]"
                       }
-    `}
-                  >
+                      `}>
 
                     <div className="flex items-center gap-3">
 
@@ -387,16 +340,7 @@ export default function CriarCasamentoPage() {
 
                             return (
                               <div
-                                className="
-                  flex
-                  h-9
-                  w-9
-                  items-center
-                  justify-center
-                  rounded-lg
-                  bg-[#f7e6e7]
-                  text-[#b47b7f]
-                "
+                                className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f7e6e7] text-[#b47b7f]"
                               >
                                 <Icon className="h-5 w-5" />
                               </div>
@@ -420,16 +364,7 @@ export default function CriarCasamentoPage() {
                       ) : (
                         <>
                           <div
-                            className="
-              flex
-              h-9
-              w-9
-              items-center
-              justify-center
-              rounded-lg
-              bg-[#f7e6e7]
-              text-[#b47b7f]
-            "
+                            className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f7e6e7] text-[#b47b7f]"
                           >
                             <Gift className="h-5 w-5" />
                           </div>
@@ -445,49 +380,23 @@ export default function CriarCasamentoPage() {
                           </div>
                         </>
                       )}
-
                     </div>
 
                     <ChevronDown
-                      className={`
-        h-5
-        w-5
-        text-gray-400
-        transition-transform
-        duration-200
-        ${eventOpen ? "rotate-180" : ""}
-      `} />
-
+                      className={`h-5 w-5 text-gray-400 transition-transform duration-200 ${eventOpen ? "rotate-180" : ""} `} />
                   </button>
-
 
                   {/* LISTA */}
                   {eventOpen && (
                     <div
-                      className="
-        absolute
-        left-0
-        right-0
-        top-[calc(100%+8px)]
-        z-50
-        overflow-hidden
-        rounded-2xl
-        border
-        border-white/80
-        bg-white/95
-        p-2
-        shadow-2xl
-        backdrop-blur-xl">
+                      className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-2xl border border-white/80 bg-white/95 p-2 shadow-2xl backdrop-blur-xl">
 
                       {/* CABEÇALHO */}
                       <div className="px-3 pb-2 pt-2">
-
                         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                           Tipo de evento
                         </p>
-
                       </div>
-
 
                       {/* OPÇÕES */}
                       <div className="space-y-1">
@@ -495,7 +404,6 @@ export default function CriarCasamentoPage() {
                         {EVENT_TYPES.map((type) => {
 
                           const Icon = EVENT_ICONS[type.value];
-
                           const selected = eventType === type.value;
 
                           return (
@@ -541,37 +449,21 @@ export default function CriarCasamentoPage() {
                                     {type.value === "outro" &&
                                       "Crie um evento personalizado"}
                                   </p>
-
                                 </div>
-
                               </div>
-
 
                               {/* CHECK */}
                               {selected && (
                                 <div
-                                  className="
-                    flex
-                    h-6
-                    w-6
-                    items-center
-                    justify-center
-                    rounded-full
-                    bg-[#c4777d]
-                    text-white
-                  "
+                                  className="flex h-6 w-6 items-center justify-center rounded-full bg-[#c4777d] text-white"
                                 >
                                   <Check className="h-4 w-4" />
                                 </div>
                               )}
-
                             </button>
                           );
-
                         })}
-
                       </div>
-
                     </div>
                   )}
 
@@ -580,15 +472,13 @@ export default function CriarCasamentoPage() {
 
             </div>
 
-            {/* ========================================= */}
             {/* TÍTULO */}
-            {/* ========================================= */}
 
             <div>
 
               <label
                 htmlFor="title"
-                className="mb-2 block text-sm font-semibold text-gray-700"
+                className={labelClass}
               >
                 Título do evento
               </label>
@@ -618,21 +508,17 @@ export default function CriarCasamentoPage() {
                   focus:ring-[#c4777d]/20
                 "
               />
-
               <p className="mt-2 text-xs text-gray-400">
                 É isso que os convidados vão ver no topo da sua página.
               </p>
-
             </div>
 
-            {/* ========================================= */}
             {/* DATA */}
-            {/* ========================================= */}
 
             <div className="relative">
               <label
-                htmlFor="eventDate"
-                className="mb-2 block text-sm font-medium text-[#342f2b]"
+                htmlFor="eventType"
+                className={labelClass}
               >
                 Data do evento
               </label>
@@ -767,8 +653,8 @@ export default function CriarCasamentoPage() {
                 ${isPast
                               ? "cursor-not-allowed text-gray-300"
                               : selected
-                              ? "bg-[#c4777d] font-semibold text-white shadow-md"
-                              : "text-gray-700 hover:bg-[#f3e2e1] hover:text-[#b47b7f]"
+                                ? "bg-[#c4777d] font-semibold text-white shadow-md"
+                                : "text-gray-700 hover:bg-[#f3e2e1] hover:text-[#b47b7f]"
                             }
               `}
                         >
@@ -808,21 +694,18 @@ export default function CriarCasamentoPage() {
               )}
             </div>
 
-            {/* ========================================= */}
             {/* PIX */}
-            {/* ========================================= */}
 
             <div>
 
               <label
                 htmlFor="pixKey"
-                className="mb-2 block text-sm font-semibold text-gray-700"
+                className={labelClass}
               >
                 Sua chave Pix
               </label>
 
               <div className="relative">
-
                 <KeyRound
                   className="
                     pointer-events-none
@@ -864,29 +747,23 @@ export default function CriarCasamentoPage() {
                 />
 
               </div>
-
               <p className="mt-2 text-xs text-gray-400">
                 Usada pra gerar o QR code com o valor certo quando um
                 convidado for pagar um presente.
               </p>
-
             </div>
 
-            {/* ========================================= */}
             {/* SENHA DOS CONVIDADOS */}
-            {/* ========================================= */}
 
             <div>
-
               <label
                 htmlFor="guestPassword"
-                className="mb-2 block text-sm font-semibold text-gray-700"
+                className={labelClass}
               >
                 Senha de acesso dos convidados
               </label>
 
               <div className="relative">
-
                 <input
                   id="guestPassword"
                   type={showPassword ? "text" : "password"}
@@ -942,24 +819,19 @@ export default function CriarCasamentoPage() {
                 </button>
 
               </div>
-
               <p className="mt-2 text-xs text-gray-400">
                 Não precisa ser complexa — é só pra impedir acesso
                 de quem não foi convidado.
                 Você vai compartilhar ela junto com o link da sua página.
               </p>
-
             </div>
 
-            {/* ========================================= */}
             {/* SLUG */}
-            {/* ========================================= */}
 
             <div>
-
               <label
                 htmlFor="slug"
-                className="mb-2 block text-sm font-semibold text-gray-700"
+                className={labelClass}
               >
                 Endereço da sua página
               </label>
@@ -1016,17 +888,13 @@ export default function CriarCasamentoPage() {
                 />
 
               </div>
-
               <p className="mt-2 text-xs text-gray-400">
                 Esse é só um preview — o endereço final ganha um
                 código extra do servidor pra garantir que não existe outro igual.
               </p>
-
             </div>
 
-            {/* ========================================= */}
             {/* PREVIEW */}
-            {/* ========================================= */}
 
             <div
               className="
@@ -1037,21 +905,16 @@ export default function CriarCasamentoPage() {
                 p-5
               "
             >
-
               <p className="text-sm font-semibold text-[#b47b7f]">
                 Seu endereço ficará assim:
               </p>
-
               <p className="mt-2 break-all font-medium text-gray-700">
                 https://WebGift.com/evento/
                 {slug || "jose-e-maria"}
               </p>
-
             </div>
 
-            {/* ========================================= */}
             {/* BOTÃO */}
-            {/* ========================================= */}
 
             <button
               type="submit"
@@ -1099,23 +962,16 @@ export default function CriarCasamentoPage() {
                   ? "Criando evento..."
                   : "Criar meu evento"}
               </span>
-
             </button>
-
           </form>
-
         </section>
 
-        {/* ========================================= */}
         {/* RODAPÉ */}
-        {/* ========================================= */}
 
         <p className="mt-6 text-center text-sm text-gray-400">
           Você poderá editar essas informações depois.
         </p>
-
       </div>
-
     </main>
   );
 }

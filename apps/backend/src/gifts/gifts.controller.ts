@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Delete,
   HttpCode,
   HttpStatus,
   Param,
@@ -31,7 +32,7 @@ export class GiftsController {
     private readonly eventsService: EventsService,
     private readonly metadataService: MetadataService,
     private readonly giftsService: GiftsService,
-  ) {}
+  ) { }
 
   // Só busca e devolve os metadados — NÃO salva nada. O rate limit vale só
   // aqui: esta rota aciona serviços externos pagos (Bright Data/Microlink),
@@ -65,6 +66,16 @@ export class GiftsController {
   @Get()
   findAll(@Param('slug') slug: string, @Req() request: Request & { userId: string }) {
     return this.giftsService.findAll(slug, request.userId);
+  }
+
+  @Delete(':giftId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(
+    @Param('slug') slug: string,
+    @Param('giftId', ParseUUIDPipe) giftId: string,
+    @Req() request: Request & { userId: string },
+  ): Promise<void> {
+    await this.giftsService.remove(slug, giftId, request.userId);
   }
 
   @Patch(':giftId')

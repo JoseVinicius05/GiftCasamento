@@ -12,7 +12,7 @@ import { TOKEN_COOKIE } from './auth-cookie';
 // mensagem de preço, 422 com o "code" etc).
 export async function proxyToBackend(
   path: string,
-  options: { method: 'GET' | 'POST' | 'PATCH'; body?: unknown },
+  options: { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown },
 ): Promise<NextResponse> {
   const cookieStore = await cookies();
   const token = cookieStore.get(TOKEN_COOKIE)?.value;
@@ -40,6 +40,14 @@ export async function proxyToBackend(
     );
   }
 
+  // Respostas 204 não podem ter corpo.
+  if (backendResponse.status === 204) {
+    return new NextResponse(null, { status: 204 });
+  }
+
   const data = await backendResponse.json().catch(() => ({}));
-  return NextResponse.json(data, { status: backendResponse.status });
+
+  return NextResponse.json(data, {
+    status: backendResponse.status,
+  });
 }
