@@ -139,13 +139,20 @@ describe('EventsService', () => {
       );
     });
 
-    it('retorna { valid: true } com a senha correta', async () => {
+    it('retorna o id e o título do evento com a senha correta', async () => {
       const guestPasswordHash = await bcrypt.hash('senhacerta', 10);
-      prisma.event.findUnique.mockResolvedValue({ guestPasswordHash });
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'evt-1',
+        title: 'Casamento Ana & João',
+        guestPasswordHash,
+      });
 
       const result = await service.verifyGuestAccess('casamento-x7k2', 'senhacerta');
 
-      expect(result).toEqual({ valid: true });
+      // Nunca devolve o hash da senha — só o que o controller precisa pra
+      // emitir a sessão do convidado.
+      expect(result).toEqual({ eventId: 'evt-1', title: 'Casamento Ana & João' });
+      expect(result).not.toHaveProperty('guestPasswordHash');
     });
   });
 });

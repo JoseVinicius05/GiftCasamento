@@ -1,0 +1,55 @@
+### Extensão "REST Client" do VSCode. Rotas do CONVIDADO (Sprint 4).
+### Convidado não tem conta: entra com a senha do evento + nome e recebe um
+### token próprio (diferente do token do dono — um não vale pro outro).
+### Troque @slug pelo slug de um evento SEU e @password pela senha de convidado.
+@baseUrl = http://localhost:3001
+@slug = casamento-ana-joao-x7k2
+@password = convidados123
+
+### 1) Entrar como convidado (200 com accessToken, guest.name e event.title)
+# @name access
+POST {{baseUrl}}/events/{{slug}}/access
+Content-Type: application/json
+
+{
+  "password": "{{password}}",
+  "name": "  Maria   Souza "
+}
+
+### 2) Entrar sem nome (400 - "Informe seu nome")
+POST {{baseUrl}}/events/{{slug}}/access
+Content-Type: application/json
+
+{
+  "password": "{{password}}"
+}
+
+### 3) Visão do convidado (200: event sem pixKey, guest.name = "Maria Souza",
+###    gifts com reservedAmount e availableAmount)
+GET {{baseUrl}}/events/{{slug}}/guest/overview
+Authorization: Bearer {{access.response.body.accessToken}}
+
+### 4) Sem token (401 - "Sessão de convidado ausente")
+GET {{baseUrl}}/events/{{slug}}/guest/overview
+
+### 5) Token inventado (401 - "Sessão de convidado inválida ou expirada")
+GET {{baseUrl}}/events/{{slug}}/guest/overview
+Authorization: Bearer isso.nao.vale
+
+### 6) Token de CONVIDADO numa rota do DONO (401). Rode o bloco 1 antes.
+GET {{baseUrl}}/events
+Authorization: Bearer {{access.response.body.accessToken}}
+
+### 7) Token do DONO na rota do convidado (401). Faça login em auth.http antes
+###    e cole o accessToken do dono no lugar de COLE_O_TOKEN_DO_DONO.
+GET {{baseUrl}}/events/{{slug}}/guest/overview
+Authorization: Bearer COLE_O_TOKEN_DO_DONO
+
+### 8) Sessão de um evento na URL de OUTRO evento (401 - "Faça o acesso a este
+###    evento novamente"). Troque pelo slug de um segundo evento.
+GET {{baseUrl}}/events/COLE_O_SLUG_DE_OUTRO_EVENTO/guest/overview
+Authorization: Bearer {{access.response.body.accessToken}}
+
+### 9) Slug que não existe, com sessão válida (404)
+GET {{baseUrl}}/events/slug-que-nao-existe-123/guest/overview
+Authorization: Bearer {{access.response.body.accessToken}}

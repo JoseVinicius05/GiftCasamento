@@ -4,6 +4,7 @@ import { EventsService } from '../events/events.service';
 import { PrismaService } from '../prisma.service';
 import { CreateGiftDto } from './dto/create-gift.dto';
 import { UpdateGiftDto } from './dto/update-gift.dto';
+import { reservedByGift } from './gift-reservation.util';
 
 // O preço só pode ser alterado enquanto o presente ainda está "aberto".
 // Depois de fully_funded / purchased_via_link / confirmed, mudar o valor
@@ -69,7 +70,7 @@ export class GiftsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const reserved = await this.reservedByGift(gifts.map((gift: any) => gift.id));
+    const reserved = await reservedByGift(this.prisma, gifts.map((gift: any) => gift.id));
     return gifts.map((gift: any) => toGiftResponse(gift, reserved.get(gift.id) ?? 0));
   }
 
@@ -85,7 +86,7 @@ export class GiftsService {
       throw new NotFoundException('Presente não encontrado');
     }
 
-    const reserved = (await this.reservedByGift([gift.id])).get(gift.id) ?? 0;
+    const reserved = (await reservedByGift(this.prisma, [gift.id])).get(gift.id) ?? 0;
     const data: Prisma.GiftUncheckedUpdateInput = {};
 
     if (dto.title !== undefined) data.title = dto.title;
@@ -169,23 +170,5 @@ export class GiftsService {
     await this.prisma.gift.delete({
       where: { id: gift.id },
     });
-  }
-
-  // Soma, por presente, das cotas que "seguram" valor: confirmadas, mais as
-  // pendentes que ainda não passaram das 48h (expiresAt no futuro). Pendente
-  // vencida não conta, mesmo que o job de expiração ainda não tenha rodado.
-  private async reservedByGift(giftIds: string[]): Promise<Map<string, number>> {
-    if (giftIds.length === 0) return new Map();
-
-    const rows = await this.prisma.contribution.groupBy({
-      by: ['giftId'],
-      where: {
-        giftId: { in: giftIds },
-        OR: [{ status: 'confirmed' }, { status: 'pending', expiresAt: { gt: new Date() } }],
-      },
-      _sum: { amount: true },
-    });
-
-    return new Map(rows.map((row: any) => [row.giftId, Number(row._sum.amount ?? 0)]));
   }
 }

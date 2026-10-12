@@ -4,6 +4,7 @@ import { TOKEN_COOKIE } from '../../../lib/auth-cookie';
 import EditEventForm from './EditEventForm';
 import AddGiftForm from './AddGiftForm';
 import GiftList from './GiftList';
+import CopyEventLink from './CopyEventLink';
 import type { Gift as GiftType } from '../../../lib/gifts';
 import {
   ArrowLeft,
@@ -282,9 +283,7 @@ export default async function PainelEventoPage({
                 Link do seu evento
               </p>
 
-              <p className="mt-1 break-all text-sm leading-relaxed text-[#514340]">
-                {`webgift.com/evento/${event.slug}`}
-              </p>
+              <CopyEventLink slug={event.slug} />
             </div>
           </div>
         </section>

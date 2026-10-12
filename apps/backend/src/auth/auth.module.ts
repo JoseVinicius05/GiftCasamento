@@ -3,6 +3,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { GuestAuthGuard } from './guest-auth.guard';
+import { GuestSessionService } from './guest-session.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 @Module({
@@ -16,11 +18,13 @@ import { JwtAuthGuard } from './jwt-auth.guard';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 5 }]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard],
+  providers: [AuthService, JwtAuthGuard, GuestSessionService, GuestAuthGuard],
   // Exporta JwtModule (não só o guard) porque o JwtAuthGuard depende do
   // JwtService por baixo — sem re-exportar o módulo que o fornece, o Nest
   // não consegue resolver essa dependência em outros módulos (como o
   // EventsModule) que só importam o AuthModule.
-  exports: [JwtModule, JwtAuthGuard],
+  // Sessão/guard do convidado (Sprint 4) também saem daqui: o EventsModule
+  // emite o token no /access e o GuestModule protege as rotas do convidado.
+  exports: [JwtModule, JwtAuthGuard, GuestSessionService, GuestAuthGuard],
 })
 export class AuthModule {}

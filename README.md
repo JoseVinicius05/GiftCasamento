@@ -98,7 +98,7 @@ Cobrindo:
 | `/events` | GET | Dono (JWT) | Lista só os eventos do dono logado |
 | `/events/:slug` | GET | Dono (JWT) | Dados completos de um evento — 404 se não existir ou não for seu |
 | `/events/:slug` | PATCH | Dono (JWT) | Edita título, tipo, data e/ou chave Pix |
-| `/events/:slug/access` | POST | Pública | Convidado confere a senha do evento (sem gerar sessão ainda — isso é Sprint 4) |
+| `/events/:slug/access` | POST | Pública + rate limit | Convidado envia `{ password, name }`; com a senha certa recebe o token de **sessão de convidado** (7 dias) |
 
 Nenhuma variável de ambiente nova foi adicionada nesta sprint — as mesmas
 do Dia 1 (`DATABASE_URL`, `JWT_SECRET`, `FRONTEND_URL`) continuam
@@ -136,7 +136,7 @@ faltando **não é erro** — é o caso normal.
   `fully_funded` / `purchased_via_link` / `confirmed` (409). Título, link e imagem
   continuam editáveis.
 - Links e imagens só aceitam `http`/`https` (nada de `javascript:`).
-- **Não há exclusão de presente** — não está no planejamento do MVP.
+- **Exclusão de presente** (`DELETE`): só presente `available` e sem nenhuma cota (nem expirada); senão 409.
 - O frontend salva em `productUrl` o **`resolvedUrl`** do preview (o link completo),
   não o link encurtado que o dono colou.
 
@@ -241,3 +241,16 @@ deploy que já está no ar.
   camada funciona), Amazon completa e Amazon `a.co`.
 - Atualizar a documentação e fazer a retro; o que não fechar vira débito técnico
   explícito no início da Sprint 4.
+
+## Lado do convidado (Sprint 4, Dia 1)
+
+| Rota | Método | Protegida? | O que faz |
+|---|---|---|---|
+| `/events/:slug/access` | POST | Pública + rate limit | Confere a senha + nome e devolve o token de convidado |
+| `/events/:slug/guest/overview` | GET | Convidado (token de convidado) | Evento (sem chave Pix) + presentes com `reservedAmount` e `availableAmount` |
+
+- O token de convidado é **diferente** do token do dono: usa uma chave derivada do `JWT_SECRET`
+  (nenhuma variável de ambiente nova) e um não vale na rota do outro.
+- No frontend, o token fica num **cookie httpOnly por evento** (`gift_guest_<slug>`); o link que o
+  dono compartilha é `/<slug>`.
+- Testes manuais em `apps/backend/http/guest.http`.
