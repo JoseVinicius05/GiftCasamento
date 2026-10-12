@@ -84,12 +84,13 @@ export class EventsService {
     });
   }
 
-  // Rota pública (sem JWT) — convidados não têm conta. Só confere a senha,
-  // não gera sessão/token de convidado ainda (isso é a Sprint 4).
+  // Rota pública (sem JWT) — convidados não têm conta. Confere a senha e
+  // devolve o evento ao qual ela dá acesso; quem emite a sessão do convidado
+  // (token) é o controller, com o nome que o convidado declarou.
   async verifyGuestAccess(slug: string, password: string) {
     const event = await this.prisma.event.findUnique({
       where: { slug },
-      select: { guestPasswordHash: true },
+      select: { id: true, title: true, guestPasswordHash: true },
     });
 
     if (!event) {
@@ -101,7 +102,7 @@ export class EventsService {
       throw new UnauthorizedException('Senha incorreta');
     }
 
-    return { valid: true };
+    return { eventId: event.id, title: event.title };
   }
 
   // Gera um slug único a partir do título, tipo "casamento-ana-joao-x7k2".

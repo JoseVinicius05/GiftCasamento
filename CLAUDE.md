@@ -68,7 +68,8 @@ Não existe atalho sem autenticação. Ver `MercadoLivreToken` no modelo de dado
   evento do dono; presente de outro evento = 404; `price` obrigatório (> 0, 2
   casas); mudar preço → `priceSource = 'manual'`; preço não pode cair abaixo do
   reservado (409) nem mudar após `fully_funded`/`purchased_via_link`/`confirmed`
-  (409). Sem exclusão no MVP. `productUrl`/`imageUrl` só `http`/`https`.
+  (409). `DELETE` existe (fora do plano original): só presente `available` e sem
+  nenhuma `Contribution`, senão 409. `productUrl`/`imageUrl` só `http`/`https`.
 - Sprint 4 deve revalidar, dentro da transação da cota, que o preço atual cobre o
   valor reservado (há uma janela entre o PATCH de preço e a criação de cotas).
 
@@ -148,4 +149,20 @@ revisada com isso em mente.
 - Antes de implementar qualquer fluxo de pagamento além do que está descrito acima, pare e pergunte — é a área de maior risco de compliance do projeto.
 - Sprint 6 é buffer, não é para features novas — se estiver ajudando a planejar trabalho para a sprint 6, priorize correção de bugs e polimento, não escopo novo.
 
-
+### Implementado no Dia 1 da Sprint 4 (sessão do convidado)
+- `POST /events/:slug/access` agora recebe `{ password, name }` e devolve
+  `{ accessToken, guest, event }`. O token é de **convidado**: payload
+  `{ typ:'guest', sid, eventId, name }`, assinado com chave **derivada** do
+  `JWT_SECRET` (nunca a do dono), 7 dias. `JwtAuthGuard` recusa token de convidado;
+  `GuestAuthGuard` (em `auth/`) protege as rotas do convidado.
+- `GET /events/:slug/guest/overview` (módulo `guest/`): evento **sem `pixKey`** +
+  presentes com `reservedAmount`/`availableAmount`. A chave Pix só pode sair no
+  momento de contribuir (Sprint 4, Dias 2–3). Sessão de outro evento → 401.
+- Regra de saldo em `gifts/gift-reservation.util.ts` (confirmadas + pendentes com
+  `expiresAt` futuro) — compartilhada entre dono e convidado. Não duplicar.
+- Frontend: cookie httpOnly **por evento** (`gift_guest_<slug>`, `lib/guest-cookie.ts`),
+  BFF `/api/events/[slug]/access` (POST/DELETE), `/[slug]` é Server Component com
+  `GuestGate` (senha+nome) e lista real. O token nunca vai no corpo da resposta.
+- Ainda **não** existe: criar cota, reivindicar presente, "minhas contribuições"
+  (Dias 2–4). O botão de presentear está desabilitado de propósito.
+- Plano completo da sprint: `docs/planejamento-mvp.md`, seção 10.

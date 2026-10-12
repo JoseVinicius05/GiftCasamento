@@ -98,14 +98,15 @@ Authorization: Bearer {{login.response.body.accessToken}}
   "pixKey": "chave@example.com"
 }
 
-### 11) Verificar senha de convidado — correta (deve retornar 200, { "valid": true })
+### 11) Verificar senha de convidado — correta (deve retornar 200 com accessToken de CONVIDADO, guest e event.title)
 ### Pública: sem Authorization. Troque pelo slug do evento criado no bloco 2
 ### e pela senha de convidado que você usou lá ("convidados123").
 POST {{baseUrl}}/events/casamento-ana-joao-b087q/access
 Content-Type: application/json
 
 {
-  "password": "convidados123"
+  "password": "convidados123",
+  "name": "Maria Souza"
 }
 
 ### 12) Verificar senha de convidado — errada (deve retornar 401 - "Senha incorreta")
@@ -113,7 +114,8 @@ POST {{baseUrl}}/events/COLE_O_SLUG_AQUI/access
 Content-Type: application/json
 
 {
-  "password": "senha-errada"
+  "password": "senha-errada",
+  "name": "Maria Souza"
 }
 
 ### 13) Verificar senha de convidado — slug que não existe (deve retornar 404)
@@ -121,5 +123,6 @@ POST {{baseUrl}}/events/slug-que-nao-existe-123/access
 Content-Type: application/json
 
 {
-  "password": "qualquer"
+  "password": "qualquer",
+  "name": "Maria Souza"
 }

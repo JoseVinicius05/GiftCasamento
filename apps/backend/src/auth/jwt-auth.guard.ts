@@ -19,7 +19,15 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     try {
-      const payload = await this.jwtService.verifyAsync<{ sub: string }>(token);
+      const payload = await this.jwtService.verifyAsync<{ sub?: string; typ?: string }>(token);
+
+      // Só aceita token de DONO (tem `sub` = id do usuário). O token de
+      // convidado usa outra chave e já falharia na assinatura; esta checagem
+      // é uma segunda trava, caso alguém um dia unifique as chaves por engano.
+      if (typeof payload.sub !== 'string' || payload.typ === 'guest') {
+        throw new UnauthorizedException('Token inválido ou expirado');
+      }
+
       request.userId = payload.sub;
       return true;
     } catch {

@@ -1,181 +1,234 @@
-import Link from "next/link";
+import { cookies } from 'next/headers';
+import { notFound } from 'next/navigation';
+import { Gift as GiftIcon } from 'lucide-react';
+import { formatBRL } from '../../lib/gifts';
+import { guestCookieName } from '../../lib/guest-cookie';
+import {
+  GUEST_EVENT_KICKER,
+  isGiftClosed,
+  type GuestGift,
+  type GuestOverview,
+} from '../../lib/guest';
+import GuestGate from './GuestGate';
+import LeaveButton from './LeaveButton';
 
-export default async function CasamentoPage({
+// Página PÚBLICA do evento (o link que o dono compartilha: /<slug>).
+// Sprint 4, Dia 1: troca os dados fictícios pelos reais. Fluxo:
+//   sem cookie de sessão  → porta de entrada (senha + nome)
+//   com cookie            → busca a visão do convidado no backend
+//   backend diz 401       → sessão vencida/inválida → porta de entrada
+//   backend diz 404       → evento não existe
+function MessageState({ slug, title, message }: { slug: string; title: string; message: string }) {
+  return (
+    <main className="flex min-h-dvh items-center justify-center bg-[#fff8fb] px-4 py-10">
+      <div className="w-full max-w-md rounded-3xl border border-[#f0dfe2] bg-white/90 p-8 text-center shadow-[0_16px_45px_rgba(115,77,77,0.08)]">
+        <h1 className="font-serif text-2xl text-[#302b28]">{title}</h1>
+        <p className="mt-3 text-sm leading-relaxed text-[#827573]">{message}</p>
+        {/* <a> comum (não onClick) porque esta página é Server Component. */}
+        <a
+          href={`/${slug}`}
+          className="mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-[#c4777d] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b66b72]"
+        >
+          Tentar novamente
+        </a>
+      </div>
+    </main>
+  );
+}
+
+function GiftStatusArea({ gift }: { gift: GuestGift }) {
+  if (isGiftClosed(gift.status) || gift.availableAmount <= 0) {
+    return (
+      <p className="mt-4 rounded-lg bg-[#f6f1f1] px-3 py-2 text-center text-sm font-medium text-[#827573]">
+        Já garantido por um convidado
+      </p>
+    );
+  }
+
+  const hasShares = gift.reservedAmount > 0;
+  const percent = Math.min(100, Math.round((gift.reservedAmount / gift.price) * 100));
+
+  return (
+    <div className="mt-4">
+      {hasShares ? (
+        <>
+          <div
+            className="h-2 overflow-hidden rounded-full bg-[#f3e4e6]"
+            role="progressbar"
+            aria-valuenow={percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Quanto do presente já foi garantido em cotas"
+          >
+            <div className="h-full rounded-full bg-[#c4777d]" style={{ width: `${percent}%` }} />
+          </div>
+          <p className="mt-2 text-xs text-[#827573]">
+            {formatBRL(gift.reservedAmount)} já garantidos · faltam {formatBRL(gift.availableAmount)}
+          </p>
+        </>
+      ) : (
+        <p className="text-xs text-[#827573]">Ninguém escolheu este presente ainda</p>
+      )}
+    </div>
+  );
+}
+
+export default async function EventoConvidadoPage({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  const cookieStore = await cookies();
+  const token = cookieStore.get(guestCookieName(slug))?.value;
 
-  // Por enquanto estamos usando dados fictícios.
-  // Depois vamos buscar essas informações no backend.
-  const casamento = {
-    noivos: "Paulo & Denise",
-    data: "15 de Novembro de 2026",
-    cidade: "Campo Mourão - PR",
-    mensagem:
-      "Estamos muito felizes em compartilhar este momento tão especial com vocês!",
-    foto:
-      "https://cdn-assets-legacy.casar.com/thumb/autoxautox1xx0,0,1280,576/dados/sitenoivos/wed1500392/sliders/B7ViA_1781837730.jpeg",
-  };
+  if (!token) {
+    return <GuestGate slug={slug} />;
+  }
 
-  const presentes = [
-    {
-      id: 1,
-      nome: "Cafeteira",
-      descricao: "Para começarmos nossas manhãs juntos.",
-      preco: 450,
-      imagem:
-        "https://images.unsplash.com/photo-1517256064527-09c73fc73e38?auto=format&fit=crop&w=600&q=80",
-    },
-    {
-      id: 2,
-      nome: "Jantar romântico",
-      descricao: "Uma noite especial para nós dois.",
-      preco: 200,
-      imagem:
-        "https://images.unsplash.com/photo-1515003197210-e0cd71810b5f?auto=format&fit=crop&w=600&q=80",
-    },
-    {
-      id: 3,
-      nome: "Passeio na lua de mel",
-      descricao: "Uma experiência inesquecível durante nossa viagem.",
-      preco: 300,
-      imagem:
-        "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80",
-    },
-    {
-      id: 4,
-      nome: "Hospedagem",
-      descricao: "Uma diária para tornar nossa viagem ainda mais especial.",
-      preco: 350,
-      imagem:
-        "https://images.unsplash.com/photo-1564501049412-61c2a3083791?auto=format&fit=crop&w=600&q=80",
-    },
-  ];
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+  if (!apiUrl) {
+    return (
+      <MessageState
+        slug={slug}
+        title="Configuração indisponível"
+        message="Não foi possível conectar ao servidor. Tente novamente mais tarde."
+      />
+    );
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl}/events/${encodeURIComponent(slug)}/guest/overview`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+  } catch {
+    return (
+      <MessageState
+        slug={slug}
+        title="Não foi possível carregar a lista"
+        message="Não conseguimos falar com o servidor agora. Tente novamente em instantes."
+      />
+    );
+  }
+
+  if (response.status === 401) {
+    // Sessão vencida ou de outro evento. Não dá pra apagar o cookie daqui
+    // (Server Component); o próprio login seguinte o sobrescreve.
+    return <GuestGate slug={slug} expired />;
+  }
+
+  if (response.status === 404) {
+    notFound();
+  }
+
+  if (!response.ok) {
+    return (
+      <MessageState
+        slug={slug}
+        title="Algo deu errado"
+        message="Não foi possível carregar a lista de presentes. Tente novamente em instantes."
+      />
+    );
+  }
+
+  const { event, guest, gifts }: GuestOverview = await response.json();
+
+  // timeZone UTC: a data vem como meia-noite UTC; no Brasil (UTC-3) sem isso
+  // apareceria o dia anterior. Mesmo tratamento do painel do dono.
+  const formattedDate = new Date(event.eventDate).toLocaleDateString('pt-BR', {
+    timeZone: 'UTC',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
 
   return (
-    <main className="min-h-screen bg-[#fff9fb] text-gray-800">
+    <main className="min-h-dvh bg-[#fff8fb] text-[#302b28]">
       {/* HERO */}
-      <section className="relative h-[70vh] min-h-[500px] overflow-hidden">
-        <img
-          src={casamento.foto}
-          alt={`Foto de ${casamento.noivos}`}
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-
-        {/* Overlay */}
-        <div className="absolute inset-0 bg-black/45" />
-
-        <div className="relative z-10 flex h-full items-center justify-center px-6 text-center text-white">
-          <div className="max-w-3xl">
-            <p className="mb-4 text-sm uppercase tracking-[0.35em]">
-              Nosso casamento
-            </p>
-
-            <h1 className="text-5xl font-semibold md:text-7xl">
-              {casamento.noivos}
-            </h1>
-
-            <p className="mt-6 text-xl md:text-2xl">{casamento.data}</p>
-
-            <p className="mt-2 text-base md:text-lg">
-              {casamento.cidade}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* MENSAGEM */}
-      <section className="px-6 py-20">
-        <div className="mx-auto max-w-3xl text-center">
-          <span className="text-4xl">💍</span>
-
-          <h2 className="mt-4 text-3xl font-semibold md:text-4xl">
-            Um momento especial
-          </h2>
-
-          <p className="mt-6 text-lg leading-8 text-gray-600">
-            {casamento.mensagem}
-          </p>
-        </div>
+      <section className="bg-gradient-to-b from-[#f3dfe4] to-[#fff8fb] px-6 py-16 text-center sm:py-24">
+        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#b47b7f] sm:text-sm">
+          {GUEST_EVENT_KICKER[event.eventType]}
+        </p>
+        <h1 className="mx-auto mt-4 max-w-3xl break-words font-serif text-4xl sm:text-6xl">
+          {event.title}
+        </h1>
+        <p className="mt-5 text-lg capitalize text-[#6d5b58]">{formattedDate}</p>
+        <p className="mt-8 text-sm text-[#827573]">
+          Olá, <span className="font-semibold text-[#514340]">{guest.name}</span>! ·{' '}
+          <LeaveButton slug={slug} />
+        </p>
       </section>
 
       {/* PRESENTES */}
-      <section className="bg-white px-6 py-20">
+      <section className="bg-white px-4 py-14 sm:px-6 sm:py-20">
         <div className="mx-auto max-w-6xl">
-          <div className="mb-12 text-center">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-pink-500">
+          <div className="mb-10 text-center">
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#b47b7f]">
               Lista de presentes
             </p>
+            <h2 className="mt-3 font-serif text-3xl sm:text-4xl">Escolha um presente 🎁</h2>
+          </div>
 
-            <h2 className="mt-3 text-3xl font-semibold md:text-4xl">
-              Escolha um presente para o casal 🎁
-            </h2>
-
-            <p className="mx-auto mt-4 max-w-2xl text-gray-500">
-              Cada presente representa uma contribuição para começarmos essa
-              nova etapa da nossa vida juntos.
+          {gifts.length === 0 ? (
+            <p className="mx-auto max-w-md rounded-2xl border border-dashed border-[#e8caca] px-6 py-10 text-center text-sm text-[#827573]">
+              Os anfitriões ainda não cadastraram presentes. Volte em breve!
             </p>
-          </div>
+          ) : (
+            <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              {gifts.map((gift) => (
+                <li
+                  key={gift.id}
+                  className="flex flex-col overflow-hidden rounded-2xl border border-[#f0dfe2] bg-white shadow-sm"
+                >
+                  {gift.imageUrl ? (
+                    // <img> comum: as imagens vêm por hotlink de lojas (Mercado
+                    // Livre/Amazon). referrerPolicy evita bloqueio por referer.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={gift.imageUrl}
+                      alt={gift.title}
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                      className="h-52 w-full bg-white object-contain p-2"
+                    />
+                  ) : (
+                    <div className="flex h-52 w-full items-center justify-center bg-[#fff5f6] text-[#c4a0a4]">
+                      <GiftIcon size={48} strokeWidth={1.3} />
+                    </div>
+                  )}
 
-          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-            {presentes.map((presente) => (
-              <div
-                key={presente.id}
-                className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
-              >
-                <img
-                  src={presente.imagem}
-                  alt={presente.nome}
-                  className="h-52 w-full object-cover"
-                />
+                  <div className="flex flex-1 flex-col p-5">
+                    <h3 className="break-words text-lg font-semibold leading-snug">{gift.title}</h3>
+                    <p className="mt-3 text-2xl font-bold text-[#c4777d]">{formatBRL(gift.price)}</p>
 
-                <div className="p-5">
-                  <h3 className="text-xl font-semibold">
-                    {presente.nome}
-                  </h3>
+                    <GiftStatusArea gift={gift} />
 
-                  <p className="mt-2 min-h-[48px] text-sm leading-6 text-gray-500">
-                    {presente.descricao}
-                  </p>
-
-                  <p className="mt-5 text-2xl font-bold text-pink-500">
-                    R$ {presente.preco.toFixed(2).replace(".", ",")}
-                  </p>
-
-                  <Link
-                    href={`/checkout?casamento=${slug}&presente=${presente.id}`}
-                    className="mt-5 block w-full rounded-xl bg-pink-500 px-4 py-3 text-center font-semibold text-white transition hover:bg-pink-600"
-                  >
-                    Presentear
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
+                    {/* Dias 2–3 da Sprint 4 trocam este botão por "Contribuir com uma
+                        cota" e "Presentear". Até lá, fica desabilitado — o antigo link
+                        pra /checkout levava a uma página que nunca existiu. */}
+                    {!isGiftClosed(gift.status) && gift.availableAmount > 0 && (
+                      <button
+                        type="button"
+                        disabled
+                        className="mt-5 w-full cursor-not-allowed rounded-xl bg-[#c4777d]/40 px-4 py-3 text-sm font-semibold text-white"
+                      >
+                        Presentear (em breve)
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
 
-      {/* MENSAGEM FINAL */}
-      <section className="px-6 py-20">
-        <div className="mx-auto max-w-3xl text-center">
-          <h2 className="text-3xl font-semibold">
-            Obrigado por fazer parte da nossa história ❤️
-          </h2>
-
-          <p className="mt-5 text-gray-500">
-            Sua presença e seu carinho tornam esse momento ainda mais
-            especial.
-          </p>
-        </div>
-      </section>
-
-      {/* FOOTER */}
-      <footer className="border-t border-gray-200 bg-white px-6 py-8 text-center text-sm text-gray-500">
+      <footer className="border-t border-[#f0dfe2] bg-white px-6 py-8 text-center text-sm text-[#827573]">
         <p>
-          GiftCasamento · Página de casamento de{" "}
-          <span className="font-semibold">{casamento.noivos}</span>
+          Web<span className="italic text-[#b47b7f]">Gift</span> · {event.title}
         </p>
       </footer>
     </main>

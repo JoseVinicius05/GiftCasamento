@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { Request } from 'express';
+import { GuestSessionService } from '../auth/guest-session.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -20,7 +21,10 @@ import { EventsService } from './events.service';
 
 @Controller('events')
 export class EventsController {
-  constructor(private readonly eventsService: EventsService) {}
+  constructor(
+    private readonly eventsService: EventsService,
+    private readonly guestSessionService: GuestSessionService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Post()
@@ -54,14 +58,24 @@ export class EventsController {
     return this.eventsService.update(slug, dto, request.userId);
   }
 
-  // PÚBLICA — convidados não têm conta nem token. Rate limit próprio (não o
-  // do login) porque a senha de convidado é curta (mín. 4 caracteres) e por
-  // isso mais fácil de tentar força bruta; aqui sem "username" nenhum pra
+  // PÚBLICA — convidados não têm conta nem token de dono. Rate limit próprio
+  // (não o do login) porque a senha de convidado é curta (mín. 4 caracteres) e
+  // por isso mais fácil de tentar força bruta; aqui sem "username" nenhum pra
   // separar tentativas, então vale travar cedo.
+  //
+  // Sprint 4: depois da senha, o convidado informa o nome e recebe a SESSÃO
+  // (token de convidado, 7 dias). O Next guarda esse token num cookie httpOnly.
   @UseGuards(ThrottlerGuard)
   @Post(':slug/access')
   @HttpCode(HttpStatus.OK)
-  verifyGuestAccess(@Param('slug') slug: string, @Body() dto: VerifyGuestAccessDto) {
-    return this.eventsService.verifyGuestAccess(slug, dto.password);
+  async verifyGuestAccess(@Param('slug') slug: string, @Body() dto: VerifyGuestAccessDto) {
+    const event = await this.eventsService.verifyGuestAccess(slug, dto.password);
+    const { token, session } = await this.guestSessionService.create(event.eventId, dto.name);
+
+    return {
+      accessToken: token,
+      guest: { name: session.name },
+      event: { title: event.title },
+    };
   }
 }

@@ -1,6 +1,6 @@
 # Sistema de Lista de Presentes por Evento — Planejamento MVP
 
-> **Revisão 4 — fechamento do Dia 4 da Sprint 3** (revisão 3: Dia 3).
+> **Revisão 5 — detalhamento da Sprint 4 + Dia 1 implementado** (revisão 4: Dia 4 da Sprint 3).
 > Tudo que mudou em relação à versão anterior está marcado com **🔄 Alterado** ou **🆕 Novo**.
 > O motivo das mudanças: testes reais contra a API do Mercado Livre mostraram que o
 > `GET /items/{id}` é bloqueado para anúncios de outros vendedores (mesmo com OAuth) e que o
@@ -14,6 +14,7 @@
 | 2 | Fim da Sprint 2 | Cotas via Pix; fim do "modo de pagamento" por evento; só Mercado Livre e Amazon |
 | 3 | Sprint 3, Dia 3 | Mercado Livre pelo **catálogo**, **sem preço automático** e **sem fallback Microlink**; Amazon via Bright Data; `GiftPreview`/`missingFields`; erro `UNSUPPORTED_ECOMMERCE` (422); riscos novos; ajustes nos Dias 3–5 da Sprint 3 |
 | 4 | Sprint 3, Dia 4 | CRUD de presentes (`POST/GET/PATCH`); **links encurtados da Amazon (`a.co`) suportados**; **ML sem `/p/MLB` em 3 camadas** (catálogo → multiget → descoberta por redirect; as duas últimas ainda **não validadas** contra o ML real); `resolvedUrl` no preview; regras de preço no `PATCH` |
+| 5 | Sprint 4, Dia 1 | Detalhamento dia a dia da **Sprint 4** (seção 10); **sessão do convidado** (token próprio, `sid`), `GET /events/:slug/guest/overview` e página pública `/[slug]` com dados reais; registra que a **exclusão de presente já existe** (o plano dizia que não) e que o link do painel do dono estava errado |
 
 ---
 
@@ -82,6 +83,11 @@ auto | manual), status (enum: available | partially_funded | fully_funded | purc
 
 **Contribution:** `id, gift_id (FK Gift), guest_display_name, amount, status (enum: pending |
 confirmed | expired), created_at, expires_at (created_at + 48h), confirmed_at (nullable)`
+
+> 🆕 **Previsto na Sprint 4 (ainda não migrado):** `Contribution.guest_session_id` (Dia 2) — liga a
+> cota à sessão do convidado que a criou, porque o nome é auto-declarado e pode repetir; e
+> `Gift.purchased_via_link_by` / `purchased_via_link_at` (Dia 3, **a confirmar**) — quem marcou
+> "comprei pelo link" e quando. Detalhes na seção 10.
 
 **EventExtraFunds:** `id, event_id (FK Event), amount, source_gift_id (FK Gift, nullable),
 note, created_at`
@@ -204,8 +210,8 @@ Premissa: 2 pessoas em backend (Nest/Postgres), 2 em frontend (Next.js), com rev
 |---|---|---|---|
 | 1 | Setup + fundamentos + login/autenticação | Repo, hosting no ar, schema inicial, cadastro/login em produção | ✅ |
 | 2 | Criação de evento | Evento (slug + senha de convidado), painel do evento | ✅ |
-| 3 | Cadastro de presentes + modelo de cotas | Formulário de presente (metadados + fallback manual), preço-alvo, schema de Contribution/EventExtraFunds | 🔄 em andamento (Dias 1–4 ✅) |
-| 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | — |
+| 3 | Cadastro de presentes + modelo de cotas | Formulário de presente (metadados + fallback manual), preço-alvo, schema de Contribution/EventExtraFunds | 🔄 Dias 1–4 ✅; Dia 5 (testes de controller/DTO, validação em produção) virou débito da Sprint 4 |
+| 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | 🔄 em andamento (Dia 1 ✅) — ver seção 10 |
 | 5 | Pagamento manual + confirmação + saldo extra | Painel de confirmação, `EventExtraFunds`, e-mail/notificação simples | — |
 | 6 | Testes, polimento e go-live | Concorrência, UX, bugs, deploy final — **buffer** | — |
 
@@ -376,11 +382,168 @@ Sprint 4.
   funcionar, decidir se aceitamos que anúncios clássicos são sempre manuais (e remover as camadas).
 - 🔄 **`a.co` em produção:** conferir no log se resolve por redirect direto ou só via Microlink — se
   sempre precisar do Microlink, avaliar o custo.
-- 🆕 **Excluir presente:** não está no planejamento do MVP. O dono hoje só consegue editar. Decidir
-  se entra (e como tratar presente que já tem cotas).
+- 🔄 **Excluir presente:** **já foi implementado** (`DELETE /events/:slug/gifts/:giftId`, fora do
+  planejamento original): só presente `available` e **sem nenhuma `Contribution`** (nem expirada);
+  caso contrário 409. Falta tratar a corrida com a criação de cota (ver Dia 5 da Sprint 4).
 - 🆕 **Links encurtados do ML** (`meli.la`): resolver com a mesma técnica ou continuar pedindo o
   link completo?
 - **Preço automático do Mercado Livre:** inviável pelo catálogo. Só viria do multiget, se
   funcionar. Caso contrário, aceitar o preço manual como definitivo.
 - Nome/domínio do produto ("WebGift" ainda não confirmado).
-- Página pública do convidado, ainda mockada (Sprint 4).
+- ✅ Página pública do convidado: deixou de ser mockada no Dia 1 da Sprint 4.
+
+---
+
+## 10. Detalhamento — Sprint 4 (dia a dia)
+
+**Meta:** o convidado entra no evento (senha + nome), vê a lista real e consegue **reservar** um
+presente — por completo (Pix integral ou "vou comprar pelo link") ou **por cota** — sem nunca
+estourar o valor do presente, mesmo com várias pessoas ao mesmo tempo. Cota pendente expira em 48h.
+
+### Ponto de partida (o que o código tinha no fim da Sprint 3)
+
+- `POST /events/:slug/access` só conferia a senha e devolvia `{ valid: true }` — **sem sessão**.
+- A página pública `/[slug]` era um **mock** (casal e presentes fictícios) e o botão apontava para
+  `/checkout`, rota que nunca existiu.
+- O painel do dono mostrava o link `webgift.com/evento/<slug>` — **endereço inexistente**; o real é
+  `/<slug>`.
+- A regra de saldo (confirmadas + pendentes não vencidas) existia só como método privado do
+  `GiftsService`. Nenhum endpoint criava `Contribution`, e nada mudava o `status` do presente.
+- `DELETE` de presente já existia, contrariando o plano (corrigido na seção de pontos em aberto).
+
+### 🔄 Decisões de desenho da sprint
+
+1. **Token de convidado separado do token do dono.** Assinado com uma chave **derivada** do
+   `JWT_SECRET` (HMAC com rótulo fixo) — sem variável nova. Um token de um tipo nunca é aceito pelo
+   guard do outro. Vale 7 dias e vai num **cookie httpOnly por evento** (`gift_guest_<slug>`).
+2. **Payload:** `{ typ: 'guest', sid, eventId, name }`. O `sid` (UUID) identifica a sessão e é o que
+   liga uma cota ao convidado — não o nome, que pode repetir.
+3. **A chave Pix só sai no momento de contribuir/reservar** (Dias 2–3), nunca na listagem.
+4. **Reserva atômica = linha do `Gift` travada** (`SELECT … FOR UPDATE` dentro de
+   `prisma.$transaction`), recalculando o reservado **dentro** da transação. É o que fecha a janela
+   citada nos riscos (PATCH de preço × criação de cota).
+5. **Expiração preguiçosa (lazy), sem job:** `expiresAt` vencido já deixa de contar no saldo (isso
+   já é verdade hoje); o `status` do presente é recalculado quando alguém lê/grava. Sem dependência
+   nova (`@nestjs/schedule`) e sem processo extra no Render free.
+6. **Sem gateway:** o app gera instruções de Pix (chave, valor, copia-e-cola); **não move dinheiro**.
+   Qualquer passo além disso é mudança de escopo.
+
+### Dia 1 (Segunda) — ✅ Implementado — Sessão do convidado + página pública real
+
+**Backend (dupla A)**
+- `GuestSessionService` (`create`/`verify`), `GuestAuthGuard` e `POST /events/:slug/access` agora
+  recebe `{ password, name }` e devolve `{ accessToken, guest, event }`. Nome: 2–60 caracteres,
+  espaços normalizados.
+- `JwtAuthGuard` endurecido: exige `sub` e recusa `typ: 'guest'`.
+- `GET /events/:slug/guest/overview` (guard de convidado): evento **sem `pixKey`** + presentes com
+  `reservedAmount`/`availableAmount`. Sessão de outro evento → 401; slug inexistente → 404.
+- Regra de saldo extraída para `gifts/gift-reservation.util.ts` e usada pelo dono e pelo convidado.
+- Testes: sessão, guards, overview (inclui "nunca seleciona `pixKey`"), DTO e `verifyGuestAccess`.
+  `http/guest.http` e `http/events.http` atualizados.
+
+**Frontend (dupla B)**
+- BFF `POST/DELETE /api/events/[slug]/access` (cookie httpOnly; o token **não** vai no corpo).
+- `/[slug]` virou Server Component: sem cookie → `GuestGate` (nome + senha); 401 → gate com aviso de
+  sessão expirada; 404 → `notFound()`; senão, lista real com progresso de cotas.
+- Botão "Não é você? Trocar nome"; painel do dono com o **link correto** e botão **Copiar link**.
+- O botão de presentear aparece **desabilitado** ("em breve") até os Dias 2–3.
+
+**Pronto quando:** convidado entra com senha+nome, recarrega a página e continua logado; senha errada
+dá mensagem clara; o token nunca aparece no JavaScript; o dono copia o link certo.
+
+### Dia 2 (Terça) — Contribuir com uma cota (reserva atômica)
+
+**Backend**
+- Migration: `Contribution.guestSessionId` (opcional, indexado).
+- `POST /events/:slug/guest/gifts/:giftId/contributions` `{ amount }`, tudo numa `$transaction`:
+  1. trava o `Gift` (`SELECT … FOR UPDATE`); presente de outro evento → 404;
+  2. status precisa ser `available` ou `partially_funded` (senão 409);
+  3. recalcula o reservado com a mesma regra do util;
+  4. valida `amount` (> 0, 2 casas, ≤ disponível, ≥ mínimo — ver decisões abertas);
+  5. cria `Contribution` `pending` com `expiresAt = agora + 48h` e `guestSessionId` do token;
+  6. atualiza o `status` do presente para `partially_funded` (ou `fully_funded` se zerou o disponível).
+- Resposta: contribuição + **`pixKey`** do evento e `expiresAt` (único ponto onde a chave sai).
+- Rate limit na rota; guard de convidado; conferir `guest.eventId === event.id`.
+- Testes: valor acima do disponível (409), exatamente o disponível, soma de cotas, pendente vencida
+  libera valor, presente já `fully_funded`, evento de outro convidado.
+
+**Frontend**
+- BFF `POST /api/events/[slug]/gifts/[giftId]/contributions` (lê o cookie, manda o Bearer).
+- Modal "Contribuir com uma cota": valor livre + atalhos (10 / 25 / 50 / "restante"), erros 409
+  traduzidos ("alguém acabou de reservar; o valor disponível agora é R$ X") e atualização da lista.
+
+**Pronto quando:** duas cotas somam certo, a terceira que passaria do preço é recusada, e a barra de
+progresso reflete o estado real.
+
+### Dia 3 (Quarta) — Presente completo (Pix integral ou link) + tela de pagamento
+
+**Backend**
+- `POST …/gifts/:giftId/claim` com `{ method: 'pix' | 'link' }`:
+  - `pix` = contribuição do **valor disponível inteiro** (mesma transação e regras do Dia 2);
+  - `link` = marca o presente como `purchased_via_link` (permitido em `available` e
+    `partially_funded`), guardando quem e quando (`purchasedViaLinkBy/At` — **a confirmar**).
+    Cotas já existentes **não são tocadas** nesta sprint; o `EventExtraFunds` nasce na Sprint 5,
+    quando o dono confirma.
+- Gerador de **Pix copia-e-cola estático** (BR Code EMV + CRC16) — função pura, sem dependência.
+- Testes: claim em presente já reservado (409), `link` com cotas pendentes, BR Code com CRC válido.
+
+**Frontend**
+- Escolha "Pagar tudo por Pix" / "Comprar pelo link da loja" (abre `productUrl`); tela de Pix com
+  chave, valor, **copia-e-cola com botão de copiar** e prazo de 48h.
+- QR code: **fora da v1** a menos que se aprove a dependência `qrcode` (decisão aberta).
+
+### Dia 4 (Quinta) — "Minhas contribuições", cancelamento e estados
+
+**Backend**
+- `GET …/guest/contributions` (filtra por `guestSessionId` da sessão): minhas cotas com status e
+  `expiresAt`.
+- `DELETE …/guest/contributions/:id` — cancelar a **própria** cota `pending`: vira `expired` na hora
+  e recalcula o `status` do presente. Cota de outra sessão → 404.
+- Recalcular o `status` do presente em toda leitura/gravação (expiração preguiçosa): cotas vencidas
+  fazem `partially_funded` voltar a `available`.
+
+**Frontend**
+- Seção "Minhas contribuições" com contagem regressiva das 48h, botão "Cancelar" e aviso de que
+  o dono confirma o recebimento manualmente.
+- Estados finais da lista (garantido, esgotado, expirou), estado vazio e erro de rede amigável.
+
+### Dia 5 (Sexta) — Concorrência, débitos da Sprint 3 e fecho
+
+- **Teste de concorrência real** (script contra Postgres, N requisições paralelas na mesma cota):
+  a soma das cotas **nunca** passa do preço. É o critério de aceite da sprint.
+- `GiftsService.update`: travar a linha do presente ao validar preço × reservado (fecha a janela
+  PATCH × cota). `GiftsService.remove`: contagem + exclusão dentro de transação e `P2003` → 409.
+- Débitos da Sprint 3: testes de **controller/DTO** (preview e CRUD) e **validação em produção** de
+  ML (catálogo e clássico) e Amazon (`a.co`); remover camadas do ML que nunca respondem.
+- Débito do frontend: `ErrorState` do painel do dono recebe `onClick` dentro de Server Component.
+- README/CLAUDE.md, checklist e retro.
+
+### Checklist de saída da Sprint 4
+
+- [x] Convidado entra com senha + nome e mantém a sessão (cookie httpOnly) — Dia 1
+- [x] Token de convidado e de dono não se aceitam mutuamente — Dia 1
+- [x] Página pública usa dados reais; chave Pix não aparece na listagem — Dia 1
+- [ ] Cota por Pix com reserva atômica e expiração em 48h
+- [ ] Presente completo por Pix integral ou pelo link
+- [ ] Convidado vê e cancela as próprias cotas
+- [ ] Teste de concorrência: soma de cotas nunca passa do preço
+- [ ] Débitos da Sprint 3 fechados ou re-datados
+- [ ] Tudo testado em produção
+
+### Riscos novos
+
+- **Cookie de sessão por evento** — o convidado em outro aparelho precisa entrar de novo (aceito).
+- **Nome auto-declarado** — duas pessoas podem usar o mesmo nome; por isso cota liga ao `sid`.
+- **Render free dormindo** — o primeiro acesso do convidado pode demorar; a tela de entrada mostra
+  "Entrando..." e erro amigável se o servidor não responder.
+- **Link de compra** — não há como verificar que o convidado de fato comprou; é confiança + o dono
+  confirmando na Sprint 5.
+
+### Decisões abertas (confirmar com o time antes do Dia 2/3)
+
+1. **Valor mínimo da cota** (sugestão: R$ 10, ou o restante se for menor).
+2. **`purchased_via_link` com cotas já existentes:** permitido (sugestão) ou bloqueado até o dono
+   resolver as cotas?
+3. **Campos novos em `Gift`** para guardar quem marcou "comprei pelo link" (migration).
+4. **QR code do Pix:** adicionar a dependência `qrcode` ou ficar só com copia-e-cola na v1.
+5. **Cancelar cota:** reaproveitar `expired` (sugestão) ou criar status `cancelled` (migration).
