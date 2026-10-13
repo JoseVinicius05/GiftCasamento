@@ -127,3 +127,68 @@ Authorization: Bearer {{access.response.body.accessToken}}
 ### 17) Depois de reservar, o overview (bloco 3) mostra reservedAmount maior,
 ###     availableAmount menor e status partially_funded/fully_funded.
 ###     A chave Pix NUNCA aparece nele.
+
+### ---------------------------------------------------------------------
+### Dia 3 — Presente por completo. Use @giftId de um presente COM link de
+### compra e sem cotas. (Cada bloco abaixo muda o estado do presente: troque
+### o @giftId entre testes, ou use um evento de teste.)
+
+### 18) Pagar tudo por Pix (201: method "pix", contribution com o valor restante,
+###     gift fully_funded e payment com pixKey + pixPayload)
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/{{giftId}}/claim
+Content-Type: application/json
+Authorization: Bearer {{access.response.body.accessToken}}
+
+{
+  "method": "pix"
+}
+
+### 19) Comprei pelo link (201: method "link", gift.status "purchased_via_link").
+###     Se o presente tinha cotas CONFIRMADAS, cada uma vira uma linha em
+###     event_extra_funds (confira no banco: SELECT * FROM event_extra_funds;)
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/{{giftId}}/claim
+Content-Type: application/json
+Authorization: Bearer {{access.response.body.accessToken}}
+
+{
+  "method": "link"
+}
+
+### 20) De novo no mesmo presente (409 - GIFT_UNAVAILABLE)
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/{{giftId}}/claim
+Content-Type: application/json
+Authorization: Bearer {{access.response.body.accessToken}}
+
+{
+  "method": "link"
+}
+
+### 21) Presente SEM link de compra com method link (400 - NO_PRODUCT_URL)
+###     Troque @giftId por um presente cadastrado sem link.
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/{{giftId}}/claim
+Content-Type: application/json
+Authorization: Bearer {{access.response.body.accessToken}}
+
+{
+  "method": "link"
+}
+
+### 22) Método inválido (400)
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/{{giftId}}/claim
+Content-Type: application/json
+Authorization: Bearer {{access.response.body.accessToken}}
+
+{
+  "method": "cartao"
+}
+
+### 23) Sem token (401)
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/{{giftId}}/claim
+Content-Type: application/json
+
+{
+  "method": "pix"
+}
+
+### 24) Depois de "link", o dono vê quem comprou: GET /events/{{slug}}/gifts
+###     (token do DONO) traz purchasedViaLinkBy e purchasedViaLinkAt.

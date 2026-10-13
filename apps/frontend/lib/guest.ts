@@ -75,3 +75,13 @@ export type ContributionResult = {
     pixPayload: string | null;
   };
 };
+
+// Resposta de POST .../gifts/:giftId/claim — depende do método escolhido.
+// 'pix': igual à cota (dados de pagamento do valor que faltava).
+export type ClaimPixResult = { method: 'pix' } & ContributionResult;
+
+// 'link': o presente foi marcado como comprado pelo link da loja.
+export type ClaimLinkResult = {
+  method: 'link';
+  gift: { id: string; title: string; status: GiftStatus; productUrl: string | null };
+};

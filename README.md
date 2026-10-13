@@ -249,6 +249,7 @@ deploy que já está no ar.
 | `/events/:slug/access` | POST | Pública + rate limit | Confere a senha + nome e devolve o token de convidado |
 | `/events/:slug/guest/overview` | GET | Convidado (token de convidado) | Evento (sem chave Pix) + presentes com `reservedAmount`, `availableAmount`, `minContribution` e status derivado das cotas |
 | `/events/:slug/guest/gifts/:giftId/contributions` | POST | Convidado + rate limit (20/min por IP) | Reserva uma cota (`{ "amount": 50 }`) por 48h e devolve os dados de pagamento Pix |
+| `/events/:slug/guest/gifts/:giftId/claim` | POST | Convidado + rate limit (20/min por IP) | Presente por completo: `{ "method": "pix" }` reserva o valor restante (dados de pagamento, como na cota); `{ "method": "link" }` marca "comprei pelo link" e fecha o presente |
 
 - O token de convidado é **diferente** do token do dono: usa uma chave derivada do `JWT_SECRET`
   (nenhuma variável de ambiente nova) e um não vale na rota do outro.
@@ -279,3 +280,15 @@ cd apps/backend && npx prisma migrate dev
 cd ../.. && npm install qrcode --workspace=apps/frontend
 npm install -D @types/qrcode --workspace=apps/frontend
 ```
+
+### Presente completo (Sprint 4, Dia 3)
+
+- **`pix`:** vira uma cota do **valor que ainda está disponível** (se já havia cotas, é "pagar o que
+  falta"). Mesmas regras, prazo de 48h e tela de pagamento da cota.
+- **`link`:** só vale para presente com link de compra e com saldo. Fecha o presente
+  (`purchased_via_link`) guardando quem marcou e quando. Se havia cotas **confirmadas**, cada uma
+  vira uma linha do **fundo extra** (`EventExtraFunds`) na mesma transação. Cotas pendentes
+  seguem seu curso (expiram ou, se o dono confirmar depois, vão para o fundo extra — Sprint 5).
+- Erros: `409 GIFT_UNAVAILABLE` (já garantido), `400 NO_PRODUCT_URL` (sem link de compra).
+
+**Setup depois de colar o Dia 3** (uma vez): `cd apps/backend && npx prisma migrate dev`

@@ -99,6 +99,20 @@ describe('GiftsService', () => {
       expect(result[0].price).toBe(300);
     });
 
+    it('mostra ao dono quem marcou "comprei pelo link" e quando (null nos demais)', async () => {
+      const when = new Date('2026-10-13T15:00:00Z');
+      prisma.gift.findMany.mockResolvedValue([
+        giftRow({ id: 'g1', status: 'purchased_via_link', purchasedViaLinkBy: 'Maria Souza', purchasedViaLinkAt: when }),
+        giftRow({ id: 'g2' }),
+      ]);
+      prisma.contribution.groupBy.mockResolvedValue([]);
+
+      const result = await service.findAll('casamento-x', OWNER_ID);
+
+      expect(result[0]).toMatchObject({ purchasedViaLinkBy: 'Maria Souza', purchasedViaLinkAt: when });
+      expect(result[1]).toMatchObject({ purchasedViaLinkBy: null, purchasedViaLinkAt: null });
+    });
+
     it('sem presentes: devolve lista vazia e nem consulta cotas', async () => {
       prisma.gift.findMany.mockResolvedValue([]);
 

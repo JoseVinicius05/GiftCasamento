@@ -248,4 +248,49 @@ describe('GuestContributionsService.create', () => {
     const select = prisma.event.findUnique.mock.calls[0][0].select;
     expect(select).not.toHaveProperty('guestPasswordHash');
   });
+
+  describe("amount = 'remaining' (pagar tudo por Pix)", () => {
+    it('usa exatamente o que ainda está disponível, decidido DENTRO da transação', async () => {
+      setup(giftRow(), 120.5);
+
+      const result = await service.create('casamento-x', GIFT_ID, GUEST, 'remaining');
+
+      expect(tx.contribution.create.mock.calls[0][0].data.amount).toBe(179.5);
+      expect(result.contribution.amount).toBe(179.5);
+      expect(result.gift).toMatchObject({ status: 'fully_funded', reservedAmount: 300, availableAmount: 0 });
+      expect(order).toEqual(['lock', 'findGift', 'reserved', 'createContribution', 'updateGift']);
+    });
+
+    it('presente sem nada reservado: a cota é o preço inteiro', async () => {
+      const result = await service.create('casamento-x', GIFT_ID, GUEST, 'remaining');
+
+      expect(result.contribution.amount).toBe(300);
+      expect(result.payment.pixPayload).toContain('5406300.00');
+    });
+
+    it('restante menor que R$ 10 também passa (é o próprio restante)', async () => {
+      setup(giftRow(), 293);
+
+      const result = await service.create('casamento-x', GIFT_ID, GUEST, 'remaining');
+
+      expect(result.contribution.amount).toBe(7);
+    });
+
+    it('sem saldo: 409 GIFT_UNAVAILABLE, nada gravado', async () => {
+      setup(giftRow({ status: 'fully_funded' }), 300);
+
+      const error = await failure(service.create('casamento-x', GIFT_ID, GUEST, 'remaining'));
+
+      expect(error.getResponse()).toMatchObject({ code: 'GIFT_UNAVAILABLE' });
+      expect(tx.contribution.create).not.toHaveBeenCalled();
+    });
+
+    it('comprado pelo link: 409 GIFT_UNAVAILABLE', async () => {
+      setup(giftRow({ status: 'purchased_via_link' }), 0);
+
+      const error = await failure(service.create('casamento-x', GIFT_ID, GUEST, 'remaining'));
+
+      expect(error.getResponse()).toMatchObject({ code: 'GIFT_UNAVAILABLE' });
+    });
+  });
 });
