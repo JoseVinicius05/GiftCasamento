@@ -53,3 +53,77 @@ Authorization: Bearer {{access.response.body.accessToken}}
 ### 9) Slug que não existe, com sessão válida (404)
 GET {{baseUrl}}/events/slug-que-nao-existe-123/guest/overview
 Authorization: Bearer {{access.response.body.accessToken}}
+
+### ---------------------------------------------------------------------
+### Dia 2 — Cota por Pix. Troque @giftId pelo id de um presente do evento
+### (GET /events/:slug/gifts do dono, ou o id que aparece no bloco 3).
+@giftId = COLE_O_ID_DO_PRESENTE_AQUI
+
+### 10) Reservar uma cota de R$ 50 (201: contribution pending com expiresAt em 48h,
+###     gift atualizado e payment com pixKey + pixPayload)
+# @name contribute
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/{{giftId}}/contributions
+Content-Type: application/json
+Authorization: Bearer {{access.response.body.accessToken}}
+
+{
+  "amount": 50
+}
+
+### 11) Abaixo do mínimo (400 - AMOUNT_BELOW_MINIMUM com minAmount 10,
+###     ou o restante se faltar menos que R$ 10)
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/{{giftId}}/contributions
+Content-Type: application/json
+Authorization: Bearer {{access.response.body.accessToken}}
+
+{
+  "amount": 5
+}
+
+### 12) Acima do que falta (409 - AMOUNT_EXCEEDS_AVAILABLE com availableAmount)
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/{{giftId}}/contributions
+Content-Type: application/json
+Authorization: Bearer {{access.response.body.accessToken}}
+
+{
+  "amount": 999999
+}
+
+### 13) Valor inválido (400 - mais de 2 casas decimais)
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/{{giftId}}/contributions
+Content-Type: application/json
+Authorization: Bearer {{access.response.body.accessToken}}
+
+{
+  "amount": 10.555
+}
+
+### 14) Sem token (401)
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/{{giftId}}/contributions
+Content-Type: application/json
+
+{
+  "amount": 50
+}
+
+### 15) Presente que não existe neste evento (404)
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/00000000-0000-4000-8000-000000000000/contributions
+Content-Type: application/json
+Authorization: Bearer {{access.response.body.accessToken}}
+
+{
+  "amount": 50
+}
+
+### 16) id que não é UUID (400)
+POST {{baseUrl}}/events/{{slug}}/guest/gifts/nao-e-uuid/contributions
+Content-Type: application/json
+Authorization: Bearer {{access.response.body.accessToken}}
+
+{
+  "amount": 50
+}
+
+### 17) Depois de reservar, o overview (bloco 3) mostra reservedAmount maior,
+###     availableAmount menor e status partially_funded/fully_funded.
+###     A chave Pix NUNCA aparece nele.

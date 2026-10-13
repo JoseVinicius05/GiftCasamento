@@ -1,6 +1,11 @@
 import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { GuestSession } from '../auth/guest-session.service';
-import { reservedByGift } from '../gifts/gift-reservation.util';
+import {
+  deriveGiftStatus,
+  minContributionCents,
+  reservedByGift,
+  toCents,
+} from '../gifts/gift-reservation.util';
 import { PrismaService } from '../prisma.service';
 
 function round2(value: number): number {
@@ -12,6 +17,7 @@ function round2(value: number): number {
 // Sprint 4, Dia 2/3).
 function toGuestGift(gift: any, reservedAmount: number) {
   const price = Number(gift.price);
+  const availableAmount = Math.max(0, round2(price - reservedAmount));
 
   return {
     id: gift.id,
@@ -19,10 +25,16 @@ function toGuestGift(gift: any, reservedAmount: number) {
     imageUrl: gift.imageUrl,
     productUrl: gift.productUrl,
     price,
-    status: gift.status,
+    // Status DERIVADO das cotas (não o gravado): cota pendente que expirou
+    // não dispara atualização no banco, e o convidado não pode ver "garantido"
+    // num presente cujas reservas já venceram.
+    status: deriveGiftStatus(gift.status, gift.price, reservedAmount),
     reservedAmount,
     // Quanto ainda dá pra contribuir/comprar: price - (confirmadas + pendentes vivas).
-    availableAmount: Math.max(0, round2(price - reservedAmount)),
+    availableAmount,
+    // Menor cota aceita agora: R$ 10 ou o restante, se for menos. Vem do
+    // backend pra regra existir num lugar só.
+    minContribution: minContributionCents(toCents(availableAmount)) / 100,
   };
 }
 

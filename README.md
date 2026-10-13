@@ -247,10 +247,35 @@ deploy que já está no ar.
 | Rota | Método | Protegida? | O que faz |
 |---|---|---|---|
 | `/events/:slug/access` | POST | Pública + rate limit | Confere a senha + nome e devolve o token de convidado |
-| `/events/:slug/guest/overview` | GET | Convidado (token de convidado) | Evento (sem chave Pix) + presentes com `reservedAmount` e `availableAmount` |
+| `/events/:slug/guest/overview` | GET | Convidado (token de convidado) | Evento (sem chave Pix) + presentes com `reservedAmount`, `availableAmount`, `minContribution` e status derivado das cotas |
+| `/events/:slug/guest/gifts/:giftId/contributions` | POST | Convidado + rate limit (20/min por IP) | Reserva uma cota (`{ "amount": 50 }`) por 48h e devolve os dados de pagamento Pix |
 
 - O token de convidado é **diferente** do token do dono: usa uma chave derivada do `JWT_SECRET`
   (nenhuma variável de ambiente nova) e um não vale na rota do outro.
 - No frontend, o token fica num **cookie httpOnly por evento** (`gift_guest_<slug>`); o link que o
   dono compartilha é `/<slug>`.
 - Testes manuais em `apps/backend/http/guest.http`.
+
+### Cota por Pix (Sprint 4, Dia 2)
+
+- **Valor:** mínimo R$ 10 (ou o restante do presente, se faltar menos que isso); máximo = o que
+  ainda está disponível. Fora disso: `400 AMOUNT_BELOW_MINIMUM` / `409 AMOUNT_EXCEEDS_AVAILABLE`
+  (com `availableAmount`). Presente já garantido: `409 GIFT_UNAVAILABLE`.
+- **Reserva atômica:** a linha do presente é travada (`SELECT … FOR UPDATE`) dentro de uma
+  transação; duas pessoas pagando "o que falta" ao mesmo tempo nunca passam do preço.
+- **Expiração:** a cota nasce `pending` e vale 48h. Passou disso, o valor volta a ficar
+  disponível sozinho (a regra de saldo ignora pendente vencida; não há job).
+- **Pagamento:** a resposta traz `payment.pixKey` e `payment.pixPayload` (Pix Copia e Cola com o
+  valor, usado também para o QR Code no frontend). `pixPayload` é `null` se a chave do dono não
+  puder virar um BR Code válido. O sistema só **gera o texto**; o Pix cai direto na conta do dono
+  e a confirmação continua manual.
+
+**Setup depois de colar o Dia 2** (uma vez):
+
+```bash
+# aplica a migration e regenera o Prisma Client
+cd apps/backend && npx prisma migrate dev
+# dependência do QR Code (a partir da raiz do monorepo)
+cd ../.. && npm install qrcode --workspace=apps/frontend
+npm install -D @types/qrcode --workspace=apps/frontend
+```

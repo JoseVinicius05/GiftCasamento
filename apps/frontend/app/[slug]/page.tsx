@@ -9,11 +9,12 @@ import {
   type GuestGift,
   type GuestOverview,
 } from '../../lib/guest';
+import GiftContribute from './GiftContribute';
 import GuestGate from './GuestGate';
 import LeaveButton from './LeaveButton';
 
 // Página PÚBLICA do evento (o link que o dono compartilha: /<slug>).
-// Sprint 4, Dia 1: troca os dados fictícios pelos reais. Fluxo:
+// Sprint 4, Dia 1: dados reais; Dia 2: reservar cota. Fluxo:
 //   sem cookie de sessão  → porta de entrada (senha + nome)
 //   com cookie            → busca a visão do convidado no backend
 //   backend diz 401       → sessão vencida/inválida → porta de entrada
@@ -206,17 +207,10 @@ export default async function EventoConvidadoPage({
 
                     <GiftStatusArea gift={gift} />
 
-                    {/* Dias 2–3 da Sprint 4 trocam este botão por "Contribuir com uma
-                        cota" e "Presentear". Até lá, fica desabilitado — o antigo link
-                        pra /checkout levava a uma página que nunca existiu. */}
+                    {/* Dia 2: cota por Pix. O "Presentear por completo" (Pix integral
+                        ou pelo link da loja) chega no Dia 3. */}
                     {!isGiftClosed(gift.status) && gift.availableAmount > 0 && (
-                      <button
-                        type="button"
-                        disabled
-                        className="mt-5 w-full cursor-not-allowed rounded-xl bg-[#c4777d]/40 px-4 py-3 text-sm font-semibold text-white"
-                      >
-                        Presentear (em breve)
-                      </button>
+                      <GiftContribute slug={slug} gift={gift} />
                     )}
                   </div>
                 </li>

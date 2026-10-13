@@ -163,6 +163,29 @@ revisada com isso em mente.
 - Frontend: cookie httpOnly **por evento** (`gift_guest_<slug>`, `lib/guest-cookie.ts`),
   BFF `/api/events/[slug]/access` (POST/DELETE), `/[slug]` é Server Component com
   `GuestGate` (senha+nome) e lista real. O token nunca vai no corpo da resposta.
-- Ainda **não** existe: criar cota, reivindicar presente, "minhas contribuições"
-  (Dias 2–4). O botão de presentear está desabilitado de propósito.
+- Ainda **não** existe: reivindicar presente por completo e "minhas contribuições"
+  (Dias 3–4).
 - Plano completo da sprint: `docs/planejamento-mvp.md`, seção 10.
+
+### Implementado no Dia 2 da Sprint 4 (cota por Pix)
+- `POST /events/:slug/guest/gifts/:giftId/contributions { amount }` (token de convidado +
+  rate limit 20/min por IP). **Reserva atômica:** dentro de `prisma.$transaction`, trava a linha
+  do presente (`SELECT … FOR UPDATE`), SÓ DEPOIS lê preço e saldo, valida e grava. Nunca
+  ler o saldo antes do lock.
+- Regras do valor: **mínimo R$ 10 ou o restante, se menor**; teto = disponível agora (409
+  `AMOUNT_EXCEEDS_AVAILABLE`); presente `purchased_via_link`/`confirmed` ou sem saldo → 409
+  `GIFT_UNAVAILABLE`. Cota nasce `pending` com `expiresAt = +48h`, `guestSessionId` (sid do
+  token) e o nome do convidado. Todo cálculo de saldo em **centavos** (`toCents`).
+- `fully_funded` DERIVA das cotas e pode estar velho (cota expirada não atualiza o banco):
+  quem decide é o saldo (`reservedByGift`), e a leitura do convidado usa `deriveGiftStatus`.
+  Não confiar no `status` gravado pra bloquear nem pra exibir.
+- **A chave Pix só sai na resposta da criação da cota** (`payment: { pixKey, pixPayload }`).
+  Nunca no overview. O Dia 4 reabre esses dados nas "minhas cotas".
+- `src/pix/pix-payload.ts`: Pix Copia e Cola **estático** (BR Code EMV + CRC16), função pura.
+  Não fala com banco nenhum nem move dinheiro — o princípio central segue valendo. Chave Pix é
+  texto livre: normaliza e, se não der, `pixPayload = null` (frontend mostra só a chave).
+- Migration `20261012210000_add_contribution_guest_session` (`contributions.guest_session_id`).
+- Frontend: `GiftContribute` (modal `<dialog>` + QR com a lib **`qrcode`**, import dinâmico) e BFF
+  `/api/events/[slug]/gifts/[giftId]/contributions`.
+- Decisões do time (Dia 2): comprar um presente pelo link quando já tem cotas manda o valor das
+  cotas para o **fundo extra** (`EventExtraFunds`) — implementação no Dia 3; QR aprovado.

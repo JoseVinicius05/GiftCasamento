@@ -1,6 +1,6 @@
 # Sistema de Lista de Presentes por Evento — Planejamento MVP
 
-> **Revisão 5 — detalhamento da Sprint 4 + Dia 1 implementado** (revisão 4: Dia 4 da Sprint 3).
+> **Revisão 6 — Dia 2 da Sprint 4 implementado + decisões do time** (revisão 5: detalhamento da Sprint 4 e Dia 1).
 > Tudo que mudou em relação à versão anterior está marcado com **🔄 Alterado** ou **🆕 Novo**.
 > O motivo das mudanças: testes reais contra a API do Mercado Livre mostraram que o
 > `GET /items/{id}` é bloqueado para anúncios de outros vendedores (mesmo com OAuth) e que o
@@ -15,6 +15,7 @@
 | 3 | Sprint 3, Dia 3 | Mercado Livre pelo **catálogo**, **sem preço automático** e **sem fallback Microlink**; Amazon via Bright Data; `GiftPreview`/`missingFields`; erro `UNSUPPORTED_ECOMMERCE` (422); riscos novos; ajustes nos Dias 3–5 da Sprint 3 |
 | 4 | Sprint 3, Dia 4 | CRUD de presentes (`POST/GET/PATCH`); **links encurtados da Amazon (`a.co`) suportados**; **ML sem `/p/MLB` em 3 camadas** (catálogo → multiget → descoberta por redirect; as duas últimas ainda **não validadas** contra o ML real); `resolvedUrl` no preview; regras de preço no `PATCH` |
 | 5 | Sprint 4, Dia 1 | Detalhamento dia a dia da **Sprint 4** (seção 10); **sessão do convidado** (token próprio, `sid`), `GET /events/:slug/guest/overview` e página pública `/[slug]` com dados reais; registra que a **exclusão de presente já existe** (o plano dizia que não) e que o link do painel do dono estava errado |
+| 6 | Sprint 4, Dia 2 | **Cota por Pix** com reserva atômica (lock da linha do presente) e expiração de 48h; **Pix Copia e Cola + QR Code** antecipados do Dia 3 (QR aprovado, dependência `qrcode`); `Contribution.guestSessionId` migrado; valor mínimo da cota = R$ 10 ou o restante; **decisão:** presente comprado pelo link com cotas → valores das cotas vão para o fundo extra |
 
 ---
 
@@ -211,7 +212,7 @@ Premissa: 2 pessoas em backend (Nest/Postgres), 2 em frontend (Next.js), com rev
 | 1 | Setup + fundamentos + login/autenticação | Repo, hosting no ar, schema inicial, cadastro/login em produção | ✅ |
 | 2 | Criação de evento | Evento (slug + senha de convidado), painel do evento | ✅ |
 | 3 | Cadastro de presentes + modelo de cotas | Formulário de presente (metadados + fallback manual), preço-alvo, schema de Contribution/EventExtraFunds | 🔄 Dias 1–4 ✅; Dia 5 (testes de controller/DTO, validação em produção) virou débito da Sprint 4 |
-| 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | 🔄 em andamento (Dia 1 ✅) — ver seção 10 |
+| 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | 🔄 em andamento (Dias 1–2 ✅) — ver seção 10 |
 | 5 | Pagamento manual + confirmação + saldo extra | Painel de confirmação, `EventExtraFunds`, e-mail/notificação simples | — |
 | 6 | Testes, polimento e go-live | Concorrência, UX, bugs, deploy final — **buffer** | — |
 
@@ -451,60 +452,89 @@ estourar o valor do presente, mesmo com várias pessoas ao mesmo tempo. Cota pen
 **Pronto quando:** convidado entra com senha+nome, recarrega a página e continua logado; senha errada
 dá mensagem clara; o token nunca aparece no JavaScript; o dono copia o link certo.
 
-### Dia 2 (Terça) — Contribuir com uma cota (reserva atômica)
+### Dia 2 (Terça) — ✅ Implementado — Cota por Pix (reserva atômica) + Pix Copia e Cola + QR
+
+> 🔄 **Mudança de escopo em relação ao plano da revisão 5:** o gerador de **Pix Copia e Cola** e o
+> **QR Code** (que eram do Dia 3) vieram para o Dia 2. Motivo: sem eles, a cota criada não teria
+> como ser paga na tela. O Dia 3 fica só com o presente completo.
 
 **Backend**
-- Migration: `Contribution.guestSessionId` (opcional, indexado).
-- `POST /events/:slug/guest/gifts/:giftId/contributions` `{ amount }`, tudo numa `$transaction`:
-  1. trava o `Gift` (`SELECT … FOR UPDATE`); presente de outro evento → 404;
-  2. status precisa ser `available` ou `partially_funded` (senão 409);
-  3. recalcula o reservado com a mesma regra do util;
-  4. valida `amount` (> 0, 2 casas, ≤ disponível, ≥ mínimo — ver decisões abertas);
-  5. cria `Contribution` `pending` com `expiresAt = agora + 48h` e `guestSessionId` do token;
-  6. atualiza o `status` do presente para `partially_funded` (ou `fully_funded` se zerou o disponível).
-- Resposta: contribuição + **`pixKey`** do evento e `expiresAt` (único ponto onde a chave sai).
-- Rate limit na rota; guard de convidado; conferir `guest.eventId === event.id`.
-- Testes: valor acima do disponível (409), exatamente o disponível, soma de cotas, pendente vencida
-  libera valor, presente já `fully_funded`, evento de outro convidado.
+- Migration `20261012210000_add_contribution_guest_session`: `contributions.guest_session_id`
+  (opcional) + índice.
+- `POST /events/:slug/guest/gifts/:giftId/contributions` `{ amount }` (token de convidado + rate
+  limit de 20/min por IP). Tudo dentro de `prisma.$transaction`:
+  1. trava a linha do presente (`SELECT … FOR UPDATE`, filtrando por evento) — presente de outro
+     evento ou inexistente → 404 sem travar nada;
+  2. **só depois** lê o presente e o saldo (confirmadas + pendentes vivas) — preço e reservas atuais;
+  3. `purchased_via_link`/`confirmed` → 409 `GIFT_UNAVAILABLE`; disponível = 0 → 409 igual. O
+     `fully_funded` **não** bloqueia por si: ele deriva das cotas e pode estar velho (cotas
+     expiradas), quem decide é o saldo calculado;
+  4. valor: **mínimo R$ 10 ou o restante, se for menor** (400 `AMOUNT_BELOW_MINIMUM` + `minAmount`);
+     acima do disponível → 409 `AMOUNT_EXCEEDS_AVAILABLE` + `availableAmount`;
+  5. cria `Contribution` `pending`, `expiresAt = agora + 48h`, `guestSessionId` do token e o nome;
+  6. grava o status do presente: `partially_funded`, ou `fully_funded` se zerou o disponível.
+- Resposta (201): a cota, o presente atualizado e `payment: { pixKey, pixPayload }` — **o único
+  lugar onde a chave Pix sai** para o convidado.
+- `src/pix/pix-payload.ts`: **Pix Copia e Cola estático** (BR Code EMV + CRC16/CCITT-FALSE), função
+  pura, sem dependência. Normaliza a chave digitada pelo dono (e-mail, UUID, CPF, CNPJ, celular);
+  se não der pra normalizar com segurança, `pixPayload = null` e a tela mostra só a chave. O
+  recebedor no BR Code é o **nome do dono** (sem acento, ≤ 25) e a cidade é fixa (`BRASIL`); o
+  `txid` é o id da cota (sem hífens, ≤ 25) — útil para conciliar na Sprint 5.
+- **Expiração preguiçosa também na leitura:** o `GET …/guest/overview` agora devolve o status
+  **derivado** das cotas (`deriveGiftStatus`) e `minContribution`; um presente cujas reservas
+  venceram volta a aparecer como disponível mesmo com o status velho no banco.
+- Testes: pix (CRC, chaves, estrutura TLV), saldo/status derivado, criação de cota (ordem
+  lock → leitura → escrita, limites, mínimo, restante < R$ 10, ponto flutuante, status velho,
+  terminais, Pix) e DTO.
 
 **Frontend**
-- BFF `POST /api/events/[slug]/gifts/[giftId]/contributions` (lê o cookie, manda o Bearer).
-- Modal "Contribuir com uma cota": valor livre + atalhos (10 / 25 / 50 / "restante"), erros 409
-  traduzidos ("alguém acabou de reservar; o valor disponível agora é R$ X") e atualização da lista.
+- BFF `POST /api/events/[slug]/gifts/[giftId]/contributions` (lê o cookie httpOnly, manda o Bearer).
+- `GiftContribute`: modal (`<dialog>` nativo) com valor + atalhos (R$ 10/25/50 e "Completar"),
+  erros traduzidos (409 atualiza a lista e o valor disponível), e a tela de pagamento com **QR
+  Code**, **Copia e Cola**, **chave Pix** e prazo de 48h. A biblioteca `qrcode` carrega só nessa
+  tela (import dinâmico).
+- ⚠️ **Limitação até o Dia 4:** os dados de pagamento aparecem **uma vez** (Esc não fecha de
+  primeira durante o pagamento, e a tela avisa para guardar/printar).
 
-**Pronto quando:** duas cotas somam certo, a terceira que passaria do preço é recusada, e a barra de
-progresso reflete o estado real.
+**Pronto quando:** duas cotas somam certo, a que passaria do preço é recusada com o valor
+disponível, a barra de progresso reflete a reserva e o QR abre no app do banco.
 
-### Dia 3 (Quarta) — Presente completo (Pix integral ou link) + tela de pagamento
+### Dia 3 (Quarta) — Presente completo (Pix integral ou link)
 
 **Backend**
 - `POST …/gifts/:giftId/claim` com `{ method: 'pix' | 'link' }`:
-  - `pix` = contribuição do **valor disponível inteiro** (mesma transação e regras do Dia 2);
+  - `pix` = contribuição do **valor disponível inteiro** (mesma transação, regras, Copia e Cola e QR
+    do Dia 2 — reaproveita `GuestContributionsService`);
   - `link` = marca o presente como `purchased_via_link` (permitido em `available` e
-    `partially_funded`), guardando quem e quando (`purchasedViaLinkBy/At` — **a confirmar**).
-    Cotas já existentes **não são tocadas** nesta sprint; o `EventExtraFunds` nasce na Sprint 5,
-    quando o dono confirma.
-- Gerador de **Pix copia-e-cola estático** (BR Code EMV + CRC16) — função pura, sem dependência.
-- Testes: claim em presente já reservado (409), `link` com cotas pendentes, BR Code com CRC válido.
+    `partially_funded`), na mesma transação com lock, guardando quem e quando.
+- Migration: `Gift.purchasedViaLinkBy` (nome) e `Gift.purchasedViaLinkAt` — **aprovada**.
+- ✅ **Decisão (time): comprar pelo link um presente que já tem cotas manda o valor das cotas para
+  o fundo extra.** Na transação do `link`, cada cota **confirmada** vira uma linha em
+  `EventExtraFunds` (`sourceGiftId`, `note` com o nome do presente). O `EventExtraFunds` acumula
+  esses valores no painel do dono (tela do saldo: Sprint 5).
+- 🆕 **Proposta para as cotas pendentes (confirmar):** continuam `pending`; se o dono confirmar uma
+  delas depois, num presente já `purchased_via_link`, o valor vai para o fundo extra na hora
+  (Sprint 5); se ninguém pagou, expiram normalmente.
+- Testes: claim em presente já reservado (409), `link` com cotas confirmadas gerando as linhas do
+  fundo extra, `link` com pendentes, atomicidade (nada gravado se algo falha).
 
 **Frontend**
-- Escolha "Pagar tudo por Pix" / "Comprar pelo link da loja" (abre `productUrl`); tela de Pix com
-  chave, valor, **copia-e-cola com botão de copiar** e prazo de 48h.
-- QR code: **fora da v1** a menos que se aprove a dependência `qrcode` (decisão aberta).
+- Escolha "Pagar tudo por Pix" / "Comprar pelo link da loja" (abre `productUrl` e pede para
+  marcar "comprei"); a tela de Pix do Dia 2 é reaproveitada.
 
 ### Dia 4 (Quinta) — "Minhas contribuições", cancelamento e estados
 
 **Backend**
 - `GET …/guest/contributions` (filtra por `guestSessionId` da sessão): minhas cotas com status e
   `expiresAt`.
+- 🆕 **Reabrir os dados de pagamento** de uma cota `pending` minha (chave + Copia e Cola regerado):
+  o Dia 2 mostra esses dados uma única vez.
 - `DELETE …/guest/contributions/:id` — cancelar a **própria** cota `pending`: vira `expired` na hora
-  e recalcula o `status` do presente. Cota de outra sessão → 404.
-- Recalcular o `status` do presente em toda leitura/gravação (expiração preguiçosa): cotas vencidas
-  fazem `partially_funded` voltar a `available`.
+  (decisão ainda aberta, ver abaixo) e recalcula o status do presente. Cota de outra sessão → 404.
 
 **Frontend**
-- Seção "Minhas contribuições" com contagem regressiva das 48h, botão "Cancelar" e aviso de que
-  o dono confirma o recebimento manualmente.
+- Seção "Minhas contribuições" com contagem regressiva das 48h, botão "Ver Pix" (reabre o
+  QR/Copia e Cola), "Cancelar" e aviso de que o dono confirma o recebimento manualmente.
 - Estados finais da lista (garantido, esgotado, expirou), estado vazio e erro de rede amigável.
 
 ### Dia 5 (Sexta) — Concorrência, débitos da Sprint 3 e fecho
@@ -523,7 +553,8 @@ progresso reflete o estado real.
 - [x] Convidado entra com senha + nome e mantém a sessão (cookie httpOnly) — Dia 1
 - [x] Token de convidado e de dono não se aceitam mutuamente — Dia 1
 - [x] Página pública usa dados reais; chave Pix não aparece na listagem — Dia 1
-- [ ] Cota por Pix com reserva atômica e expiração em 48h
+- [x] Cota por Pix com reserva atômica e expiração em 48h — Dia 2 (expiração preguiçosa; a prova sob concorrência real é o teste do Dia 5)
+- [x] Pix Copia e Cola + QR Code na tela de pagamento — Dia 2 (antecipado do Dia 3)
 - [ ] Presente completo por Pix integral ou pelo link
 - [ ] Convidado vê e cancela as próprias cotas
 - [ ] Teste de concorrência: soma de cotas nunca passa do preço
@@ -539,11 +570,28 @@ progresso reflete o estado real.
 - **Link de compra** — não há como verificar que o convidado de fato comprou; é confiança + o dono
   confirmando na Sprint 5.
 
-### Decisões abertas (confirmar com o time antes do Dia 2/3)
+### ✅ Decisões confirmadas pelo time (Dia 2)
 
-1. **Valor mínimo da cota** (sugestão: R$ 10, ou o restante se for menor).
-2. **`purchased_via_link` com cotas já existentes:** permitido (sugestão) ou bloqueado até o dono
-   resolver as cotas?
-3. **Campos novos em `Gift`** para guardar quem marcou "comprei pelo link" (migration).
-4. **QR code do Pix:** adicionar a dependência `qrcode` ou ficar só com copia-e-cola na v1.
-5. **Cancelar cota:** reaproveitar `expired` (sugestão) ou criar status `cancelled` (migration).
+1. **Valor mínimo da cota:** R$ 10, ou o restante se for menor. *(implementado)*
+2. **Presente comprado pelo link com cotas existentes:** permitido; o valor das cotas vai para o
+   **fundo extra** (`EventExtraFunds`), que acumula o valor dos presentes comprados por completo
+   depois de já terem cotas. *(Dia 3; tratamento das pendentes na proposta acima.)*
+3. **Campos novos em `Gift`** para quem marcou "comprei pelo link": aprovados. *(Dia 3)*
+4. **QR code do Pix:** aprovado; dependência `qrcode` no frontend. *(implementado no Dia 2)*
+
+### Decisão ainda aberta
+
+5. **Cancelar cota:** reaproveitar `expired` (sugestão, sem migration) ou criar status `cancelled`
+   (migration)? Só precisa estar decidida no Dia 4.
+
+### Riscos novos do Dia 2
+
+- **Chave Pix é texto livre** (o dono digita como quiser). O gerador normaliza o que consegue; o
+  que não consegue vira `pixPayload = null` (sem QR, só a chave). Um celular de 11 dígitos sem
+  pontuação que por acaso seja um CPF válido (~1%) gera um QR que o banco recusa — nunca desvia
+  dinheiro, porque o tipo da chave não bate. Mitigação futura: pedir o tipo da chave no cadastro.
+- **Reserva sem pagamento segura o valor por 48h.** Um convidado pode reservar e não pagar; o valor
+  só volta depois do prazo (ou do cancelamento, Dia 4). Aceito no v1.
+- **Recebedor do QR é o nome do dono, cidade fixa.** O app do banco mostra o nome cadastrado na
+  chave, não o do BR Code; mesmo assim o convidado deve conferir o nome na tela de confirmação do
+  banco.

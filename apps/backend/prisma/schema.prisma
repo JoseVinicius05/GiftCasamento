@@ -106,8 +106,13 @@ model Contribution {
   // de forma portável como default de coluna).
   expiresAt         DateTime           @map("expires_at")
   confirmedAt        DateTime?         @map("confirmed_at")
+  // `sid` da sessão do convidado que criou a cota (token de convidado, Sprint 4).
+  // Liga a cota a QUEM a criou sem depender do nome, que é auto-declarado e
+  // pode se repetir. Nullable: cotas antigas (se existirem) não têm sessão.
+  guestSessionId     String?           @map("guest_session_id")
 
   @@index([giftId, status])
+  @@index([guestSessionId])
   @@map("contributions")
 }
 

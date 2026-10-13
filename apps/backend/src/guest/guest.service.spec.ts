@@ -90,7 +90,7 @@ describe('GuestService.getOverview', () => {
     const result = await service.getOverview('casamento-x', GUEST);
 
     expect(Object.keys(result.gifts[0]).sort()).toEqual(
-      ['availableAmount', 'id', 'imageUrl', 'price', 'productUrl', 'reservedAmount', 'status', 'title'],
+      ['availableAmount', 'id', 'imageUrl', 'minContribution', 'price', 'productUrl', 'reservedAmount', 'status', 'title'],
     );
   });
 
@@ -110,5 +110,34 @@ describe('GuestService.getOverview', () => {
     const result = await service.getOverview('casamento-x', GUEST);
 
     expect(result.gifts[0].availableAmount).toBe(299.7);
+  });
+
+  it('minContribution: R$ 10, ou o restante quando faltam menos de R$ 10', async () => {
+    prisma.gift.findMany.mockResolvedValue([giftRow({ id: 'g1' }), giftRow({ id: 'g2' }), giftRow({ id: 'g3' })]);
+    prisma.contribution.groupBy.mockResolvedValue([
+      { giftId: 'g2', _sum: { amount: decimal(293) } },
+      { giftId: 'g3', _sum: { amount: decimal(300) } },
+    ]);
+
+    const result = await service.getOverview('casamento-x', GUEST);
+
+    expect(result.gifts.map((gift) => gift.minContribution)).toEqual([10, 7, 0]);
+  });
+
+  it('status é DERIVADO das cotas, não o gravado (reservas vencidas liberam o presente)', async () => {
+    prisma.gift.findMany.mockResolvedValue([
+      giftRow({ id: 'g1', status: 'fully_funded' }), // gravado velho: nada reservado agora
+      giftRow({ id: 'g2', status: 'available' }), // gravado velho: já tem cota viva
+      giftRow({ id: 'g3', status: 'purchased_via_link' }), // terminal: não muda
+    ]);
+    prisma.contribution.groupBy.mockResolvedValue([{ giftId: 'g2', _sum: { amount: decimal(100) } }]);
+
+    const result = await service.getOverview('casamento-x', GUEST);
+
+    expect(result.gifts.map((gift) => gift.status)).toEqual([
+      'available',
+      'partially_funded',
+      'purchased_via_link',
+    ]);
   });
 });
