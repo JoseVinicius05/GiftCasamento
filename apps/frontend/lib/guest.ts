@@ -13,6 +13,9 @@ export type GuestGift = {
   reservedAmount: number;
   // price - reservedAmount (nunca negativo): quanto ainda dá pra contribuir.
   availableAmount: number;
+  // Menor cota aceita agora: R$ 10 ou o restante, se faltar menos que isso.
+  // Vem do backend pra a regra existir num lugar só.
+  minContribution: number;
 };
 
 export type GuestEventType =
@@ -46,3 +49,29 @@ export const GUEST_EVENT_KICKER: Record<GuestEventType, string> = {
 export function isGiftClosed(status: GiftStatus): boolean {
   return status === 'fully_funded' || status === 'purchased_via_link' || status === 'confirmed';
 }
+
+// Resposta de POST .../gifts/:giftId/contributions (cota reservada).
+export type ContributionResult = {
+  contribution: {
+    id: string;
+    giftId: string;
+    amount: number;
+    status: 'pending' | 'confirmed' | 'expired';
+    createdAt: string;
+    // A reserva vale até aqui (48h); depois o valor volta a ficar disponível.
+    expiresAt: string;
+  };
+  gift: {
+    id: string;
+    title: string;
+    status: GiftStatus;
+    reservedAmount: number;
+    availableAmount: number;
+  };
+  payment: {
+    pixKey: string;
+    // Pix Copia e Cola já com o valor. null quando a chave do dono não pôde
+    // virar um BR Code válido — aí a tela mostra só a chave, sem QR.
+    pixPayload: string | null;
+  };
+};
