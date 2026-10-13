@@ -12,7 +12,9 @@ import {
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { GuestAuthGuard, GuestRequest } from '../auth/guest-auth.guard';
+import { ClaimGiftDto } from './dto/claim-gift.dto';
 import { CreateContributionDto } from './dto/create-contribution.dto';
+import { GuestClaimsService } from './guest-claims.service';
 import { GuestContributionsService } from './guest-contributions.service';
 import { GuestService } from './guest.service';
 
@@ -24,6 +26,7 @@ export class GuestController {
   constructor(
     private readonly guestService: GuestService,
     private readonly guestContributionsService: GuestContributionsService,
+    private readonly guestClaimsService: GuestClaimsService,
   ) {}
 
   @Get('overview')
@@ -44,5 +47,20 @@ export class GuestController {
     @Req() request: GuestRequest,
   ) {
     return this.guestContributionsService.create(slug, giftId, request.guest, dto.amount);
+  }
+
+  // Presentear por completo: `{ method: 'pix' }` paga tudo o que falta (devolve
+  // os dados de pagamento, igual à cota) e `{ method: 'link' }` marca "comprei
+  // pelo link" e fecha o presente. Mesmo rate limit da criação de cota.
+  @UseGuards(ThrottlerGuard)
+  @Post('gifts/:giftId/claim')
+  @HttpCode(HttpStatus.CREATED)
+  claim(
+    @Param('slug') slug: string,
+    @Param('giftId', ParseUUIDPipe) giftId: string,
+    @Body() dto: ClaimGiftDto,
+    @Req() request: GuestRequest,
+  ) {
+    return this.guestClaimsService.claim(slug, giftId, request.guest, dto.method);
   }
 }

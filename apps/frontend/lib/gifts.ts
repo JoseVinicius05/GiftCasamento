@@ -16,8 +16,11 @@ export type Gift = {
   priceSource: 'auto' | 'manual';
   status: GiftStatus;
   createdAt: string;
-  // Soma das cotas confirmadas + pendentes ainda válidas (hoje sempre 0).
+  // Soma das cotas confirmadas + pendentes ainda válidas.
   reservedAmount: number;
+  // Quem marcou "comprei pelo link" e quando (null se ninguém marcou).
+  purchasedViaLinkBy: string | null;
+  purchasedViaLinkAt: string | null;
 };
 
 export const GIFT_STATUS_LABEL: Record<GiftStatus, string> = {

@@ -33,7 +33,11 @@ export class GuestContributionsService {
   // o preço. A solução: dentro de UMA transação, trava a linha do presente
   // (SELECT ... FOR UPDATE). Quem chega depois espera o primeiro terminar e,
   // ao destravar, já enxerga a cota dele ao recalcular o saldo.
-  async create(slug: string, giftId: string, guest: GuestSession, amount: number) {
+  //
+  // `amount` pode ser 'remaining': "pagar tudo por Pix" (Dia 3) = a cota do
+  // valor que ainda está disponível, decidido DENTRO da transação (depois do
+  // lock) — o convidado nunca manda um valor velho.
+  async create(slug: string, giftId: string, guest: GuestSession, amount: number | 'remaining') {
     // select explícito: só o que a resposta precisa (inclui pixKey, que é o
     // ÚNICO lugar onde ela sai pro convidado — e só depois da cota criada).
     const event = await this.prisma.event.findUnique({
@@ -49,8 +53,6 @@ export class GuestContributionsService {
     if (event.id !== guest.eventId) {
       throw new UnauthorizedException('Faça o acesso a este evento novamente');
     }
-
-    const amountCents = toCents(amount);
 
     const created = await this.prisma.$transaction(
       async (tx) => {
@@ -87,7 +89,9 @@ export class GuestContributionsService {
         }
 
         // 3) Regras do valor: mínimo R$ 10 (ou o restante, se menor) e teto =
-        //    o que ainda está disponível agora.
+        //    o que ainda está disponível agora. 'remaining' = tudo o que falta
+        //    (sempre dentro das duas regras).
+        const amountCents = amount === 'remaining' ? availableCents : toCents(amount);
         const minCents = minContributionCents(availableCents);
 
         if (amountCents < minCents) {

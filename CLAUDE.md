@@ -163,8 +163,7 @@ revisada com isso em mente.
 - Frontend: cookie httpOnly **por evento** (`gift_guest_<slug>`, `lib/guest-cookie.ts`),
   BFF `/api/events/[slug]/access` (POST/DELETE), `/[slug]` é Server Component com
   `GuestGate` (senha+nome) e lista real. O token nunca vai no corpo da resposta.
-- Ainda **não** existe: reivindicar presente por completo e "minhas contribuições"
-  (Dias 3–4).
+- Ainda **não** existe: "minhas contribuições" (Dia 4).
 - Plano completo da sprint: `docs/planejamento-mvp.md`, seção 10.
 
 ### Implementado no Dia 2 da Sprint 4 (cota por Pix)
@@ -189,3 +188,22 @@ revisada com isso em mente.
   `/api/events/[slug]/gifts/[giftId]/contributions`.
 - Decisões do time (Dia 2): comprar um presente pelo link quando já tem cotas manda o valor das
   cotas para o **fundo extra** (`EventExtraFunds`) — implementação no Dia 3; QR aprovado.
+
+### Implementado no Dia 3 da Sprint 4 (presente completo)
+- `POST /events/:slug/guest/gifts/:giftId/claim { method: 'pix' | 'link' }` (módulo `guest/`,
+  `GuestClaimsService`). **`pix`** = `GuestContributionsService.create(…, 'remaining')`: cota do
+  valor disponível decidido DENTRO da transação (nunca aceitar o valor do cliente aqui).
+  **`link`** = fecha o presente como `purchased_via_link` (`purchasedViaLinkBy` = nome,
+  `purchasedViaLinkAt`) na mesma transação com lock da linha.
+- **Fundo extra:** ao fechar pelo link, cada cota **confirmada** do presente vira uma linha de
+  `EventExtraFunds` (`sourceGiftId`, `note`) na MESMA transação. Cotas **pendentes** não são
+  tocadas (se o dono confirmar uma depois, vai pro fundo extra — Sprint 5). Nunca devolver dados
+  do fundo extra ao convidado.
+- Link exige saldo > 0 (calculado, não o `status` gravado) e `productUrl` (senão 400
+  `NO_PRODUCT_URL`); presente terminal → 409 `GIFT_UNAVAILABLE`.
+- Migration `20261013120000_add_gift_purchased_via_link`. O `GET /events/:slug/gifts` do dono
+  devolve `purchasedViaLinkBy/At`.
+- Frontend: `GiftClaim` (escolha Pix/link; "Já comprei" é quem fecha o presente) e
+  `PixPaymentView` (tela de pagamento compartilhada com `GiftContribute`). O repasse do cookie
+  do convidado ao backend está em `lib/guest-proxy.ts` — use-o em rotas novas do convidado.
+- "Já comprei" é irreversível pelo convidado: reversão pelo dono fica para a Sprint 5.

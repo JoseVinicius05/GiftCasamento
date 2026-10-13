@@ -210,6 +210,16 @@ function GiftCard({ slug, gift }: { slug: string; gift: Gift }) {
                   ` · ${formatBRL(gift.reservedAmount)} já reservado em cotas`}
               </p>
 
+              {gift.purchasedViaLinkBy && gift.purchasedViaLinkAt && (
+                <p className="mt-1 break-words text-xs font-medium leading-relaxed text-[#9d646a]">
+                  {/* Fuso fixo: o mesmo texto sai no servidor e no navegador (sem erro de hidratação). */}
+                  Comprado pelo link por {gift.purchasedViaLinkBy} em{' '}
+                  {new Date(gift.purchasedViaLinkAt).toLocaleDateString('pt-BR', {
+                    timeZone: 'America/Sao_Paulo',
+                  })}
+                </p>
+              )}
+
               <div className="mt-auto flex flex-wrap items-center gap-1 border-t border-[#eee1df] pt-3">
                 {gift.productUrl && (
                   <a

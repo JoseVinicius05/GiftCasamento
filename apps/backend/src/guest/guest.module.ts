@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from '../auth/auth.module';
+import { GuestClaimsService } from './guest-claims.service';
 import { GuestContributionsService } from './guest-contributions.service';
 import { GuestController } from './guest.controller';
 import { GuestService } from './guest.service';
 
 // Lado do convidado (Sprint 4). Dia 1: leitura (evento + presentes).
-// Dia 2: reservar uma cota. Dias 3–4: presente completo, "minhas cotas".
+// Dia 2: reservar uma cota. Dia 3: presentear por completo (Pix ou link).
+// Dia 4: "minhas cotas".
 @Module({
   imports: [
     AuthModule, // GuestAuthGuard / GuestSessionService
@@ -16,6 +18,6 @@ import { GuestService } from './guest.service';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }]),
   ],
   controllers: [GuestController],
-  providers: [GuestService, GuestContributionsService],
+  providers: [GuestService, GuestContributionsService, GuestClaimsService],
 })
 export class GuestModule {}

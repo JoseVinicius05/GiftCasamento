@@ -1,6 +1,6 @@
 # Sistema de Lista de Presentes por Evento — Planejamento MVP
 
-> **Revisão 6 — Dia 2 da Sprint 4 implementado + decisões do time** (revisão 5: detalhamento da Sprint 4 e Dia 1).
+> **Revisão 7 — Dia 3 da Sprint 4 implementado** (revisão 6: Dia 2 e decisões do time).
 > Tudo que mudou em relação à versão anterior está marcado com **🔄 Alterado** ou **🆕 Novo**.
 > O motivo das mudanças: testes reais contra a API do Mercado Livre mostraram que o
 > `GET /items/{id}` é bloqueado para anúncios de outros vendedores (mesmo com OAuth) e que o
@@ -16,6 +16,7 @@
 | 4 | Sprint 3, Dia 4 | CRUD de presentes (`POST/GET/PATCH`); **links encurtados da Amazon (`a.co`) suportados**; **ML sem `/p/MLB` em 3 camadas** (catálogo → multiget → descoberta por redirect; as duas últimas ainda **não validadas** contra o ML real); `resolvedUrl` no preview; regras de preço no `PATCH` |
 | 5 | Sprint 4, Dia 1 | Detalhamento dia a dia da **Sprint 4** (seção 10); **sessão do convidado** (token próprio, `sid`), `GET /events/:slug/guest/overview` e página pública `/[slug]` com dados reais; registra que a **exclusão de presente já existe** (o plano dizia que não) e que o link do painel do dono estava errado |
 | 6 | Sprint 4, Dia 2 | **Cota por Pix** com reserva atômica (lock da linha do presente) e expiração de 48h; **Pix Copia e Cola + QR Code** antecipados do Dia 3 (QR aprovado, dependência `qrcode`); `Contribution.guestSessionId` migrado; valor mínimo da cota = R$ 10 ou o restante; **decisão:** presente comprado pelo link com cotas → valores das cotas vão para o fundo extra |
+| 7 | Sprint 4, Dia 3 | **Presente completo:** `POST …/guest/gifts/:giftId/claim` com `pix` (cota do valor restante, mesma tela de pagamento) ou `link` ("comprei pelo link", fecha o presente); **cotas confirmadas viram linhas do `EventExtraFunds`** na mesma transação; migration `gifts.purchased_via_link_by/at`; dono vê quem comprou pelo link |
 
 ---
 
@@ -85,10 +86,10 @@ auto | manual), status (enum: available | partially_funded | fully_funded | purc
 **Contribution:** `id, gift_id (FK Gift), guest_display_name, amount, status (enum: pending |
 confirmed | expired), created_at, expires_at (created_at + 48h), confirmed_at (nullable)`
 
-> 🆕 **Previsto na Sprint 4 (ainda não migrado):** `Contribution.guest_session_id` (Dia 2) — liga a
-> cota à sessão do convidado que a criou, porque o nome é auto-declarado e pode repetir; e
-> `Gift.purchased_via_link_by` / `purchased_via_link_at` (Dia 3, **a confirmar**) — quem marcou
-> "comprei pelo link" e quando. Detalhes na seção 10.
+> ✅ **Sprint 4, Dia 2 (migrado):** `Contribution.guest_session_id` (opcional, indexado) — liga a
+> cota à sessão do convidado que a criou, porque o nome é auto-declarado e pode repetir.
+> ✅ **Sprint 4, Dia 3 (migrado):** `Gift.purchased_via_link_by` / `purchased_via_link_at` — quem
+> marcou "comprei pelo link" (nome auto-declarado) e quando. Detalhes na seção 10.
 
 **EventExtraFunds:** `id, event_id (FK Event), amount, source_gift_id (FK Gift, nullable),
 note, created_at`
@@ -212,7 +213,7 @@ Premissa: 2 pessoas em backend (Nest/Postgres), 2 em frontend (Next.js), com rev
 | 1 | Setup + fundamentos + login/autenticação | Repo, hosting no ar, schema inicial, cadastro/login em produção | ✅ |
 | 2 | Criação de evento | Evento (slug + senha de convidado), painel do evento | ✅ |
 | 3 | Cadastro de presentes + modelo de cotas | Formulário de presente (metadados + fallback manual), preço-alvo, schema de Contribution/EventExtraFunds | 🔄 Dias 1–4 ✅; Dia 5 (testes de controller/DTO, validação em produção) virou débito da Sprint 4 |
-| 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | 🔄 em andamento (Dias 1–2 ✅) — ver seção 10 |
+| 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | 🔄 em andamento (Dias 1–3 ✅) — ver seção 10 |
 | 5 | Pagamento manual + confirmação + saldo extra | Painel de confirmação, `EventExtraFunds`, e-mail/notificação simples | — |
 | 6 | Testes, polimento e go-live | Concorrência, UX, bugs, deploy final — **buffer** | — |
 
@@ -499,28 +500,47 @@ dá mensagem clara; o token nunca aparece no JavaScript; o dono copia o link cer
 **Pronto quando:** duas cotas somam certo, a que passaria do preço é recusada com o valor
 disponível, a barra de progresso reflete a reserva e o QR abre no app do banco.
 
-### Dia 3 (Quarta) — Presente completo (Pix integral ou link)
+### Dia 3 (Quarta) — ✅ Implementado — Presente completo (Pix integral ou link)
 
 **Backend**
-- `POST …/gifts/:giftId/claim` com `{ method: 'pix' | 'link' }`:
-  - `pix` = contribuição do **valor disponível inteiro** (mesma transação, regras, Copia e Cola e QR
-    do Dia 2 — reaproveita `GuestContributionsService`);
-  - `link` = marca o presente como `purchased_via_link` (permitido em `available` e
-    `partially_funded`), na mesma transação com lock, guardando quem e quando.
-- Migration: `Gift.purchasedViaLinkBy` (nome) e `Gift.purchasedViaLinkAt` — **aprovada**.
-- ✅ **Decisão (time): comprar pelo link um presente que já tem cotas manda o valor das cotas para
-  o fundo extra.** Na transação do `link`, cada cota **confirmada** vira uma linha em
-  `EventExtraFunds` (`sourceGiftId`, `note` com o nome do presente). O `EventExtraFunds` acumula
-  esses valores no painel do dono (tela do saldo: Sprint 5).
-- 🆕 **Proposta para as cotas pendentes (confirmar):** continuam `pending`; se o dono confirmar uma
-  delas depois, num presente já `purchased_via_link`, o valor vai para o fundo extra na hora
-  (Sprint 5); se ninguém pagou, expiram normalmente.
-- Testes: claim em presente já reservado (409), `link` com cotas confirmadas gerando as linhas do
-  fundo extra, `link` com pendentes, atomicidade (nada gravado se algo falha).
+- `POST /events/:slug/guest/gifts/:giftId/claim` `{ method: 'pix' | 'link' }` (token de convidado +
+  mesmo rate limit das cotas).
+  - **`pix`** = a cota do **valor que ainda está disponível**, decidido **dentro** da transação
+    (depois do lock): `GuestContributionsService.create(…, 'remaining')`. Mesmas regras, mesmo
+    prazo de 48h, mesmo Copia e Cola e QR do Dia 2. Resposta: `{ method: 'pix', contribution, gift, payment }`.
+  - **`link`** = "comprei pelo link": na mesma transação com lock do presente, valida e fecha o
+    presente (`purchased_via_link`) guardando **quem** (nome) e **quando**. Resposta:
+    `{ method: 'link', gift }` — nada do fundo extra vaza para o convidado.
+    - 409 `GIFT_UNAVAILABLE` se já foi comprado/confirmado ou se não há saldo (tudo reservado por
+      cotas vivas); 400 `NO_PRODUCT_URL` se o presente não tem link de compra. O `fully_funded`
+      gravado pode estar velho, então quem decide é o saldo calculado (cotas vencidas liberam).
+- ✅ **Fundo extra:** se o presente já tinha cotas **confirmadas**, cada uma vira uma linha do
+  `EventExtraFunds` (`eventId`, `amount`, `sourceGiftId`, `note` com cotista, presente e quem comprou
+  pelo link) **na mesma transação** que fecha o presente — ou acontece tudo, ou nada.
+- Cotas **pendentes não são tocadas** (proposta registrada na revisão 6): se o dono confirmar uma
+  depois num presente já `purchased_via_link`, o valor vai para o fundo extra (Sprint 5); se
+  ninguém pagou, expiram sozinhas.
+- Migration `20261013120000_add_gift_purchased_via_link` (`gifts.purchased_via_link_by` e
+  `purchased_via_link_at`). O `GET /events/:slug/gifts` do **dono** passou a devolver os dois
+  campos.
+- Testes: pix delega com `'remaining'`; link (404/401, ordem lock → leitura → escrita, terminais,
+  sem link, sem saldo, status velho, quem/quando, fundo extra com e sem cotas confirmadas,
+  pendentes intactas, resposta sem vazamento); `'remaining'` na cota; DTO.
 
 **Frontend**
-- Escolha "Pagar tudo por Pix" / "Comprar pelo link da loja" (abre `productUrl` e pede para
-  marcar "comprei"); a tela de Pix do Dia 2 é reaproveitada.
+- BFF `POST /api/events/[slug]/gifts/[giftId]/claim`; o repasse com o cookie httpOnly virou um
+  helper (`lib/guest-proxy.ts`) usado também pela rota de cotas.
+- `GiftClaim`: botão "Presentear por completo" (vira "Completar o presente" quando já há cotas)
+  com escolha **Pagar tudo por Pix** / **Comprar pelo link da loja**. O Pix reaproveita a tela de
+  pagamento (agora o componente `PixPaymentView`, compartilhado com a cota). O link abre a loja em
+  outra aba e só fecha o presente quando o convidado toca em **"Já comprei"** (aviso: marque
+  *depois* de comprar). Presente sem link só oferece Pix.
+- "Contribuir com uma cota" virou o botão secundário do card.
+- Painel do dono: o card mostra "Comprado pelo link por *Nome* em *data*".
+
+**Pronto quando:** pagar tudo por Pix reserva o restante com QR; "Já comprei" fecha o presente e,
+se havia cotas confirmadas, o fundo extra recebe uma linha por cota; um presente fechado some
+das ações dos outros convidados; o dono vê quem comprou.
 
 ### Dia 4 (Quinta) — "Minhas contribuições", cancelamento e estados
 
@@ -555,7 +575,7 @@ disponível, a barra de progresso reflete a reserva e o QR abre no app do banco.
 - [x] Página pública usa dados reais; chave Pix não aparece na listagem — Dia 1
 - [x] Cota por Pix com reserva atômica e expiração em 48h — Dia 2 (expiração preguiçosa; a prova sob concorrência real é o teste do Dia 5)
 - [x] Pix Copia e Cola + QR Code na tela de pagamento — Dia 2 (antecipado do Dia 3)
-- [ ] Presente completo por Pix integral ou pelo link
+- [x] Presente completo por Pix integral ou pelo link — Dia 3
 - [ ] Convidado vê e cancela as próprias cotas
 - [ ] Teste de concorrência: soma de cotas nunca passa do preço
 - [ ] Débitos da Sprint 3 fechados ou re-datados
@@ -595,3 +615,14 @@ disponível, a barra de progresso reflete a reserva e o QR abre no app do banco.
 - **Recebedor do QR é o nome do dono, cidade fixa.** O app do banco mostra o nome cadastrado na
   chave, não o do BR Code; mesmo assim o convidado deve conferir o nome na tela de confirmação do
   banco.
+
+### Riscos novos do Dia 3
+
+- **"Já comprei" é irreversível pelo convidado** e depende de confiança: um clique errado (ou
+  malicioso) tira o presente da lista e manda as cotas **confirmadas** para o fundo extra. O aviso
+  na tela reduz o erro, mas **não há como desfazer ainda** — o dono precisa poder reverter/ajustar
+  isso na Sprint 5 (painel de confirmações).
+- **Compra duplicada:** o presente só fecha quando o convidado marca "Já comprei", não quando abre
+  a loja. Dois convidados podem comprar o mesmo item antes de qualquer um marcar. Reservar ao
+  abrir a loja (com prazo) resolveria, mas está fora do plano.
+- **Fundo extra só é gravado, ainda não aparece:** a tela do saldo extra é da Sprint 5.

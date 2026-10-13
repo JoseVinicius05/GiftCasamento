@@ -79,6 +79,10 @@ model Gift {
   priceSource PriceSource @map("price_source")
   status      GiftStatus  @default(available)
   createdAt   DateTime    @default(now()) @map("created_at")
+  // Preenchidos quando um convidado marca "comprei pelo link" (status
+  // purchased_via_link). O nome é o auto-declarado no acesso ao evento.
+  purchasedViaLinkBy String?   @map("purchased_via_link_by")
+  purchasedViaLinkAt DateTime? @map("purchased_via_link_at")
 
   contributions     Contribution[]
   extraFundsEntries EventExtraFunds[]

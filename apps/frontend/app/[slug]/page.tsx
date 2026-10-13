@@ -9,12 +9,13 @@ import {
   type GuestGift,
   type GuestOverview,
 } from '../../lib/guest';
+import GiftClaim from './GiftClaim';
 import GiftContribute from './GiftContribute';
 import GuestGate from './GuestGate';
 import LeaveButton from './LeaveButton';
 
 // Página PÚBLICA do evento (o link que o dono compartilha: /<slug>).
-// Sprint 4, Dia 1: dados reais; Dia 2: reservar cota. Fluxo:
+// Sprint 4, Dia 1: dados reais; Dia 2: reservar cota; Dia 3: presente completo. Fluxo:
 //   sem cookie de sessão  → porta de entrada (senha + nome)
 //   com cookie            → busca a visão do convidado no backend
 //   backend diz 401       → sessão vencida/inválida → porta de entrada
@@ -207,10 +208,12 @@ export default async function EventoConvidadoPage({
 
                     <GiftStatusArea gift={gift} />
 
-                    {/* Dia 2: cota por Pix. O "Presentear por completo" (Pix integral
-                        ou pelo link da loja) chega no Dia 3. */}
+                    {/* Dia 3: presentear por completo (Pix ou link da loja). Dia 2: cota. */}
                     {!isGiftClosed(gift.status) && gift.availableAmount > 0 && (
-                      <GiftContribute slug={slug} gift={gift} />
+                      <div className="mt-5 space-y-2">
+                        <GiftClaim slug={slug} gift={gift} />
+                        <GiftContribute slug={slug} gift={gift} />
+                      </div>
                     )}
                   </div>
                 </li>

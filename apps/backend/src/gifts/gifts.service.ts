@@ -28,9 +28,12 @@ function toGiftResponse(gift: any, reservedAmount: number) {
     priceSource: gift.priceSource,
     status: gift.status,
     createdAt: gift.createdAt,
-    // Soma das cotas confirmadas + pendentes ainda dentro das 48h. Hoje é
-    // sempre 0 (as cotas chegam na Sprint 4), mas a regra já fica pronta.
+    // Soma das cotas confirmadas + pendentes ainda dentro das 48h.
     reservedAmount,
+    // Quem marcou "comprei pelo link" e quando (null se não aconteceu) — o
+    // dono precisa saber a quem agradecer e o que conferir na entrega.
+    purchasedViaLinkBy: gift.purchasedViaLinkBy ?? null,
+    purchasedViaLinkAt: gift.purchasedViaLinkAt ?? null,
   };
 }
 
