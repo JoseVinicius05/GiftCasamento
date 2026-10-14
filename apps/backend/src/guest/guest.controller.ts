@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -16,6 +17,7 @@ import { ClaimGiftDto } from './dto/claim-gift.dto';
 import { CreateContributionDto } from './dto/create-contribution.dto';
 import { GuestClaimsService } from './guest-claims.service';
 import { GuestContributionsService } from './guest-contributions.service';
+import { GuestMyContributionsService } from './guest-my-contributions.service';
 import { GuestService } from './guest.service';
 
 // Rotas do CONVIDADO (sessão de convidado, não o JWT do dono). Ficam sob
@@ -27,6 +29,7 @@ export class GuestController {
     private readonly guestService: GuestService,
     private readonly guestContributionsService: GuestContributionsService,
     private readonly guestClaimsService: GuestClaimsService,
+    private readonly guestMyContributionsService: GuestMyContributionsService,
   ) {}
 
   @Get('overview')
@@ -62,5 +65,34 @@ export class GuestController {
     @Req() request: GuestRequest,
   ) {
     return this.guestClaimsService.claim(slug, giftId, request.guest, dto.method);
+  }
+
+  // "Minhas contribuições": só as cotas criadas por esta sessão. Sem chave Pix.
+  @Get('contributions')
+  listMyContributions(@Param('slug') slug: string, @Req() request: GuestRequest) {
+    return this.guestMyContributionsService.list(slug, request.guest);
+  }
+
+  // Reabre os dados de pagamento de uma cota pendente minha (chave + Copia e Cola).
+  @Get('contributions/:contributionId/payment')
+  getContributionPayment(
+    @Param('slug') slug: string,
+    @Param('contributionId', ParseUUIDPipe) contributionId: string,
+    @Req() request: GuestRequest,
+  ) {
+    return this.guestMyContributionsService.getPayment(slug, contributionId, request.guest);
+  }
+
+  // Cancela uma cota pendente minha (vira `expired`; o valor volta a ficar
+  // disponível). Rate limit: abre transação com lock, como criar cota.
+  @UseGuards(ThrottlerGuard)
+  @Delete('contributions/:contributionId')
+  @HttpCode(HttpStatus.OK)
+  cancelMyContribution(
+    @Param('slug') slug: string,
+    @Param('contributionId', ParseUUIDPipe) contributionId: string,
+    @Req() request: GuestRequest,
+  ) {
+    return this.guestMyContributionsService.cancel(slug, contributionId, request.guest);
   }
 }

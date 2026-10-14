@@ -85,3 +85,31 @@ export type ClaimLinkResult = {
   method: 'link';
   gift: { id: string; title: string; status: GiftStatus; productUrl: string | null };
 };
+
+// Item de GET .../guest/contributions ("Minhas contribuições"). `status` já vem
+// derivado: pendente com prazo vencido chega como 'expired'. 'expired' cobre
+// tanto prazo vencido quanto cota cancelada pelo convidado.
+export type MyContribution = {
+  id: string;
+  giftId: string;
+  giftTitle: string;
+  giftImageUrl: string | null;
+  amount: number;
+  status: 'pending' | 'confirmed' | 'expired';
+  createdAt: string;
+  expiresAt: string;
+};
+
+// Resposta de GET .../guest/contributions/:id/payment (reabrir o pagamento).
+export type MyContributionPayment = {
+  contribution: {
+    id: string;
+    giftId: string;
+    amount: number;
+    status: 'pending';
+    createdAt: string;
+    expiresAt: string;
+  };
+  gift: { id: string; title: string };
+  payment: { pixKey: string; pixPayload: string | null };
+};

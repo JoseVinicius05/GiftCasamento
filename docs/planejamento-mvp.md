@@ -1,6 +1,6 @@
 # Sistema de Lista de Presentes por Evento — Planejamento MVP
 
-> **Revisão 7 — Dia 3 da Sprint 4 implementado** (revisão 6: Dia 2 e decisões do time).
+> **Revisão 8 — Dia 4 da Sprint 4 implementado** (revisão 7: Dia 3).
 > Tudo que mudou em relação à versão anterior está marcado com **🔄 Alterado** ou **🆕 Novo**.
 > O motivo das mudanças: testes reais contra a API do Mercado Livre mostraram que o
 > `GET /items/{id}` é bloqueado para anúncios de outros vendedores (mesmo com OAuth) e que o
@@ -17,6 +17,7 @@
 | 5 | Sprint 4, Dia 1 | Detalhamento dia a dia da **Sprint 4** (seção 10); **sessão do convidado** (token próprio, `sid`), `GET /events/:slug/guest/overview` e página pública `/[slug]` com dados reais; registra que a **exclusão de presente já existe** (o plano dizia que não) e que o link do painel do dono estava errado |
 | 6 | Sprint 4, Dia 2 | **Cota por Pix** com reserva atômica (lock da linha do presente) e expiração de 48h; **Pix Copia e Cola + QR Code** antecipados do Dia 3 (QR aprovado, dependência `qrcode`); `Contribution.guestSessionId` migrado; valor mínimo da cota = R$ 10 ou o restante; **decisão:** presente comprado pelo link com cotas → valores das cotas vão para o fundo extra |
 | 7 | Sprint 4, Dia 3 | **Presente completo:** `POST …/guest/gifts/:giftId/claim` com `pix` (cota do valor restante, mesma tela de pagamento) ou `link` ("comprei pelo link", fecha o presente); **cotas confirmadas viram linhas do `EventExtraFunds`** na mesma transação; migration `gifts.purchased_via_link_by/at`; dono vê quem comprou pelo link |
+| 8 | Sprint 4, Dia 4 | **"Minhas contribuições":** listar as cotas da própria sessão, **reabrir o Pix** de uma cota pendente e **cancelar** (reaproveita `expired`, sem migration); cancelar recalcula o status do presente sob lock; estados dos cards por motivo (comprado / reservado / garantido); `Esc` volta a fechar o modal de pagamento |
 
 ---
 
@@ -213,7 +214,7 @@ Premissa: 2 pessoas em backend (Nest/Postgres), 2 em frontend (Next.js), com rev
 | 1 | Setup + fundamentos + login/autenticação | Repo, hosting no ar, schema inicial, cadastro/login em produção | ✅ |
 | 2 | Criação de evento | Evento (slug + senha de convidado), painel do evento | ✅ |
 | 3 | Cadastro de presentes + modelo de cotas | Formulário de presente (metadados + fallback manual), preço-alvo, schema de Contribution/EventExtraFunds | 🔄 Dias 1–4 ✅; Dia 5 (testes de controller/DTO, validação em produção) virou débito da Sprint 4 |
-| 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | 🔄 em andamento (Dias 1–3 ✅) — ver seção 10 |
+| 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | 🔄 em andamento (Dias 1–4 ✅) — ver seção 10 |
 | 5 | Pagamento manual + confirmação + saldo extra | Painel de confirmação, `EventExtraFunds`, e-mail/notificação simples | — |
 | 6 | Testes, polimento e go-live | Concorrência, UX, bugs, deploy final — **buffer** | — |
 
@@ -542,20 +543,49 @@ disponível, a barra de progresso reflete a reserva e o QR abre no app do banco.
 se havia cotas confirmadas, o fundo extra recebe uma linha por cota; um presente fechado some
 das ações dos outros convidados; o dono vê quem comprou.
 
-### Dia 4 (Quinta) — "Minhas contribuições", cancelamento e estados
+### Dia 4 (Quinta) — ✅ Implementado — "Minhas contribuições", reabrir Pix e cancelar
 
-**Backend**
-- `GET …/guest/contributions` (filtra por `guestSessionId` da sessão): minhas cotas com status e
-  `expiresAt`.
-- 🆕 **Reabrir os dados de pagamento** de uma cota `pending` minha (chave + Copia e Cola regerado):
-  o Dia 2 mostra esses dados uma única vez.
-- `DELETE …/guest/contributions/:id` — cancelar a **própria** cota `pending`: vira `expired` na hora
-  (decisão ainda aberta, ver abaixo) e recalcula o status do presente. Cota de outra sessão → 404.
+**Backend** (tudo sob o token de convidado; a cota só é "minha" se `guestSessionId` = `sid` da
+sessão — o nome, que pode repetir, nunca decide isso; cota de outra sessão = 404)
+- `GET /events/:slug/guest/contributions`: cotas da sessão, mais recentes primeiro, com o presente
+  (título/imagem). **Sem chave Pix.** O `status` já vem derivado: pendente com prazo vencido chega
+  como `expired`.
+- `GET …/guest/contributions/:id/payment`: **reabre** os dados de pagamento (chave + Copia e Cola
+  regerado, mesmo `txid`) de uma cota **pendente e dentro do prazo**; confirmada/expirada →
+  409 `CONTRIBUTION_NOT_PAYABLE`. É o segundo (e último) ponto em que a chave Pix sai.
+- `DELETE …/guest/contributions/:id` (rate limit): **cancela a própria cota pendente**. Na transação:
+  acha a cota → **trava o presente** → **relê** a cota (pode ter mudado no meio-tempo) → vira
+  `expired` com `expiresAt = agora` → recalcula o **status gravado** do presente sobre o saldo sem
+  ela (`fully_funded` → `partially_funded` → `available`; `purchased_via_link`/`confirmed` nunca
+  são reabertos). Já confirmada ou expirada → 409 `CONTRIBUTION_NOT_CANCELLABLE`.
+- ✅ **Decisão (time): cancelar reaproveita `expired`** — sem status novo e sem migration. Efeito
+  conhecido: na lista, "expirou" e "cancelou" aparecem juntos ("Expirada ou cancelada").
+- A geração do pagamento virou um helper (`guest-payment.ts`) usado na criação da cota e ao reabrir.
+- Testes: lista (filtro por sessão/evento, sem chave Pix, status derivado), pagamento (sessão alheia,
+  não pagável, Copia e Cola com `txid`), cancelamento (ordem lock → releitura → escrita, recálculo do
+  status do presente, terminais intactos, 409s).
 
 **Frontend**
-- Seção "Minhas contribuições" com contagem regressiva das 48h, botão "Ver Pix" (reabre o
-  QR/Copia e Cola), "Cancelar" e aviso de que o dono confirma o recebimento manualmente.
-- Estados finais da lista (garantido, esgotado, expirou), estado vazio e erro de rede amigável.
+- `MyContributions` (aparece só se a sessão já reservou algo): status por cota
+  (**Aguardando pagamento** / **Confirmada** / **Expirada ou cancelada**), **contagem regressiva**
+  das 48h (só depois de carregar no navegador, para não dar erro de hidratação), **Ver Pix**
+  (reabre `PixPaymentView` em modo "reaberto") e **Cancelar reserva** com confirmação e aviso
+  para não cancelar se já pagou.
+- BFF `DELETE /api/events/[slug]/contributions/[id]` e `GET …/[id]/payment`; `lib/guest-proxy.ts`
+  ganhou `forwardGuestRequest` (GET/DELETE).
+- A página busca overview e cotas **em paralelo**; se só as cotas falharem, a lista segue.
+- Estados do card por motivo: "Já comprado por outro convidado" / "Já reservado por outros
+  convidados" / "Presente já garantido". Estado vazio e erros de rede já existiam.
+- Como os dados de pagamento agora podem ser reabertos, o modal de pagamento voltou a fechar com
+  `Esc` e a tela deixou de dizer que os dados "aparecem só agora".
+
+**Pronto quando:** o convidado fecha a tela do Pix e a reabre em "Minhas contribuições"; cancelar
+devolve o valor (a barra de progresso e o "valor disponível" voltam) e uma cota de outra sessão
+nunca aparece nem pode ser mexida.
+
+> ℹ️ **Não entra aqui:** presente marcado como "comprei pelo link" **não** aparece em "Minhas
+> contribuições" — o `purchased_via_link_by` guarda só o nome, não a sessão. Se virar necessidade
+> (ex.: "desfazer minha compra"), guardar também o `sid` do convidado (migration pequena).
 
 ### Dia 5 (Sexta) — Concorrência, débitos da Sprint 3 e fecho
 
@@ -576,7 +606,7 @@ das ações dos outros convidados; o dono vê quem comprou.
 - [x] Cota por Pix com reserva atômica e expiração em 48h — Dia 2 (expiração preguiçosa; a prova sob concorrência real é o teste do Dia 5)
 - [x] Pix Copia e Cola + QR Code na tela de pagamento — Dia 2 (antecipado do Dia 3)
 - [x] Presente completo por Pix integral ou pelo link — Dia 3
-- [ ] Convidado vê e cancela as próprias cotas
+- [x] Convidado vê, reabre o Pix e cancela as próprias cotas — Dia 4
 - [ ] Teste de concorrência: soma de cotas nunca passa do preço
 - [ ] Débitos da Sprint 3 fechados ou re-datados
 - [ ] Tudo testado em produção
@@ -599,10 +629,9 @@ das ações dos outros convidados; o dono vê quem comprou.
 3. **Campos novos em `Gift`** para quem marcou "comprei pelo link": aprovados. *(Dia 3)*
 4. **QR code do Pix:** aprovado; dependência `qrcode` no frontend. *(implementado no Dia 2)*
 
-### Decisão ainda aberta
+### ✅ Decisão confirmada pelo time (Dia 4)
 
-5. **Cancelar cota:** reaproveitar `expired` (sugestão, sem migration) ou criar status `cancelled`
-   (migration)? Só precisa estar decidida no Dia 4.
+5. **Cancelar cota:** reaproveitar `expired` (sem status novo, sem migration). *(implementado no Dia 4)*
 
 ### Riscos novos do Dia 2
 
@@ -626,3 +655,13 @@ das ações dos outros convidados; o dono vê quem comprou.
   a loja. Dois convidados podem comprar o mesmo item antes de qualquer um marcar. Reservar ao
   abrir a loja (com prazo) resolveria, mas está fora do plano.
 - **Fundo extra só é gravado, ainda não aparece:** a tela do saldo extra é da Sprint 5.
+
+### Riscos novos do Dia 4
+
+- **Sessão do convidado = "minhas contribuições".** Elas vivem na sessão (cookie, 7 dias): em outro
+  aparelho ou depois de limpar os cookies, o convidado não as enxerga e não consegue reabrir o Pix
+  nem cancelar (a reserva ainda expira sozinha em 48h). Aceito no v1; a saída seria um código de
+  recuperação ou login por e-mail, fora do plano.
+- **Cancelar depois de pagar:** o cancelamento só libera o valor no sistema — não desfaz um Pix já
+  feito. O aviso na tela pede para falar com os anfitriões nesse caso; o dono só vê o pagamento na
+  conta (a confirmação manual é da Sprint 5).

@@ -13,7 +13,7 @@ import {
   toCents,
 } from '../gifts/gift-reservation.util';
 import { PrismaService } from '../prisma.service';
-import { buildPixPayload } from '../pix/pix-payload';
+import { buildGuestPayment } from './guest-payment';
 
 // Uma cota pendente segura o valor por 48h; depois disso ele volta a ficar
 // disponível (a regra de saldo já ignora pendente vencida).
@@ -160,17 +160,9 @@ export class GuestContributionsService {
         reservedAmount: created.reservedCents / 100,
         availableAmount: created.availableCents / 100,
       },
-      payment: {
-        pixKey: event.pixKey,
-        // null quando a chave do dono não pode virar um BR Code válido: a tela
-        // mostra só a chave pra copiar, sem QR.
-        pixPayload: buildPixPayload({
-          key: event.pixKey,
-          amount: Number(contribution.amount),
-          merchantName: event.owner.name,
-          txid: contribution.id,
-        }),
-      },
+      // Único momento (junto com "reabrir pagamento" nas minhas cotas) em que a
+      // chave Pix sai pro convidado.
+      payment: buildGuestPayment(event, contribution),
     };
   }
 }

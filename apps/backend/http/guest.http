@@ -192,3 +192,43 @@ Content-Type: application/json
 
 ### 24) Depois de "link", o dono vê quem comprou: GET /events/{{slug}}/gifts
 ###     (token do DONO) traz purchasedViaLinkBy e purchasedViaLinkAt.
+
+### ---------------------------------------------------------------------
+### Dia 4 — Minhas contribuições. Rode antes o bloco 10 (reservar uma cota)
+### para existir uma cota desta sessão.
+
+### 25) Minhas contribuições (200: lista da sessão, mais recente primeiro; status
+###     "pending" | "confirmed" | "expired"; SEM chave Pix)
+# @name myContributions
+GET {{baseUrl}}/events/{{slug}}/guest/contributions
+Authorization: Bearer {{access.response.body.accessToken}}
+
+### 26) Reabrir o Pix de uma cota pendente (200 com payment.pixKey e pixPayload).
+###     Troque o id pelo de uma cota do bloco 25 (ou use a resposta do bloco 10).
+GET {{baseUrl}}/events/{{slug}}/guest/contributions/{{contribute.response.body.contribution.id}}/payment
+Authorization: Bearer {{access.response.body.accessToken}}
+
+### 27) Cota que não é desta sessão (404). Faça um NOVO acesso (bloco 1) para obter
+###     outra sessão e tente reabrir/cancelar a cota da sessão anterior.
+GET {{baseUrl}}/events/{{slug}}/guest/contributions/00000000-0000-4000-8000-000000000000/payment
+Authorization: Bearer {{access.response.body.accessToken}}
+
+### 28) Cancelar a cota (200: contribution.status "expired" e gift com o status e
+###     o availableAmount recalculados — o valor volta a ficar disponível)
+DELETE {{baseUrl}}/events/{{slug}}/guest/contributions/{{contribute.response.body.contribution.id}}
+Authorization: Bearer {{access.response.body.accessToken}}
+
+### 29) Cancelar de novo (409 - CONTRIBUTION_NOT_CANCELLABLE)
+DELETE {{baseUrl}}/events/{{slug}}/guest/contributions/{{contribute.response.body.contribution.id}}
+Authorization: Bearer {{access.response.body.accessToken}}
+
+### 30) Reabrir o Pix da cota já cancelada (409 - CONTRIBUTION_NOT_PAYABLE)
+GET {{baseUrl}}/events/{{slug}}/guest/contributions/{{contribute.response.body.contribution.id}}/payment
+Authorization: Bearer {{access.response.body.accessToken}}
+
+### 31) Sem token (401)
+GET {{baseUrl}}/events/{{slug}}/guest/contributions
+
+### 32) id que não é UUID (400)
+DELETE {{baseUrl}}/events/{{slug}}/guest/contributions/nao-e-uuid
+Authorization: Bearer {{access.response.body.accessToken}}

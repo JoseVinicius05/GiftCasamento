@@ -100,6 +100,9 @@ type PixPaymentViewProps = {
   pixKey: string;
   pixPayload: string | null;
   onClose: () => void;
+  // true quando o convidado reabre os dados de uma reserva que já existia
+  // ("Minhas contribuições"): muda os textos, não o conteúdo de pagamento.
+  reopened?: boolean;
 };
 
 export default function PixPaymentView({
@@ -110,6 +113,7 @@ export default function PixPaymentView({
   pixKey,
   pixPayload,
   onClose,
+  reopened = false,
 }: PixPaymentViewProps) {
   const expiresAtText = new Date(expiresAt).toLocaleString('pt-BR', {
     dateStyle: 'short',
@@ -119,11 +123,20 @@ export default function PixPaymentView({
   return (
     <div className="p-6 sm:p-8">
       <h2 id={titleId} className="font-serif text-2xl">
-        Reserva feita! 🎉
+        {reopened ? 'Dados de pagamento' : 'Reserva feita! 🎉'}
       </h2>
       <p className="mt-2 text-sm leading-relaxed text-[#6d5b58]">
-        Reservamos <strong>{formatBRL(amount)}</strong> de “{giftTitle}” para você até{' '}
-        <strong>{expiresAtText}</strong>. Pague agora pelo Pix:
+        {reopened ? (
+          <>
+            Sua reserva de <strong>{formatBRL(amount)}</strong> de “{giftTitle}” vale até{' '}
+            <strong>{expiresAtText}</strong>. Pague pelo Pix:
+          </>
+        ) : (
+          <>
+            Reservamos <strong>{formatBRL(amount)}</strong> de “{giftTitle}” para você até{' '}
+            <strong>{expiresAtText}</strong>. Pague agora pelo Pix:
+          </>
+        )}
       </p>
 
       <div className="mt-5 space-y-4">
@@ -150,9 +163,12 @@ export default function PixPaymentView({
           Os anfitriões confirmam o recebimento manualmente. Se o pagamento não for confirmado
           até o prazo, a reserva é liberada e o valor volta a ficar disponível.
         </p>
-        <p className="font-semibold">
-          Guarde estes dados ou tire um print — por enquanto eles aparecem só agora.
-        </p>
+        {!reopened && (
+          <p className="font-semibold">
+            Se fechar esta tela, você reabre estes dados em “Minhas contribuições”, enquanto a
+            reserva estiver valendo.
+          </p>
+        )}
       </div>
 
       <button
@@ -160,7 +176,7 @@ export default function PixPaymentView({
         onClick={onClose}
         className="mt-6 min-h-11 w-full rounded-xl bg-[#c4777d] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b66b72]"
       >
-        Concluir
+        {reopened ? 'Fechar' : 'Concluir'}
       </button>
     </div>
   );

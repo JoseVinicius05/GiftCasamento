@@ -163,7 +163,7 @@ revisada com isso em mente.
 - Frontend: cookie httpOnly **por evento** (`gift_guest_<slug>`, `lib/guest-cookie.ts`),
   BFF `/api/events/[slug]/access` (POST/DELETE), `/[slug]` é Server Component com
   `GuestGate` (senha+nome) e lista real. O token nunca vai no corpo da resposta.
-- Ainda **não** existe: "minhas contribuições" (Dia 4).
+- Ainda **não** existe: nada pendente do lado do convidado além do que está no Dia 5 (concorrência/débitos).
 - Plano completo da sprint: `docs/planejamento-mvp.md`, seção 10.
 
 ### Implementado no Dia 2 da Sprint 4 (cota por Pix)
@@ -207,3 +207,20 @@ revisada com isso em mente.
   `PixPaymentView` (tela de pagamento compartilhada com `GiftContribute`). O repasse do cookie
   do convidado ao backend está em `lib/guest-proxy.ts` — use-o em rotas novas do convidado.
 - "Já comprei" é irreversível pelo convidado: reversão pelo dono fica para a Sprint 5.
+
+### Implementado no Dia 4 da Sprint 4 (minhas contribuições)
+- `GuestMyContributionsService`: `GET /events/:slug/guest/contributions` (lista da sessão, **sem
+  chave Pix**), `GET …/contributions/:id/payment` (reabre chave + Copia e Cola de cota
+  **pendente e dentro do prazo**) e `DELETE …/contributions/:id` (cancela a própria cota
+  pendente). "Minha" = `guestSessionId` = `sid` do token — **nunca** pelo nome; cota alheia = 404.
+- **Cancelar reaproveita `expired`** (decisão do time, sem status novo): em transação, acha a cota
+  → trava o presente → RELÊ a cota → `expired` + `expiresAt = agora` → recalcula o status gravado
+  do presente (`deriveGiftStatus`; terminais nunca reabrem). Já confirmada/expirada → 409
+  `CONTRIBUTION_NOT_CANCELLABLE`.
+- A chave Pix só sai em dois lugares: resposta de criar cota/claim e `…/payment` de cota pendente.
+  Ambos usam `buildGuestPayment` (`guest/guest-payment.ts`) — não montar o Pix em outro lugar.
+- `status` da lista já é o efetivo: pendente com `expiresAt` vencido vem como `expired`.
+- Frontend: `MyContributions` (contagem regressiva só após montar, p/ evitar erro de hidratação),
+  `PixPaymentView` com `reopened`, BFF GET/DELETE via `forwardGuestRequest` (`lib/guest-proxy.ts`).
+  A página busca overview e cotas em paralelo; falha só nas cotas não derruba a lista.
+- Compra pelo link NÃO aparece nas "minhas contribuições" (só guarda o nome, não a sessão).

@@ -249,6 +249,9 @@ deploy que já está no ar.
 | `/events/:slug/access` | POST | Pública + rate limit | Confere a senha + nome e devolve o token de convidado |
 | `/events/:slug/guest/overview` | GET | Convidado (token de convidado) | Evento (sem chave Pix) + presentes com `reservedAmount`, `availableAmount`, `minContribution` e status derivado das cotas |
 | `/events/:slug/guest/gifts/:giftId/contributions` | POST | Convidado + rate limit (20/min por IP) | Reserva uma cota (`{ "amount": 50 }`) por 48h e devolve os dados de pagamento Pix |
+| `/events/:slug/guest/contributions` | GET | Convidado | "Minhas contribuições": cotas da própria sessão (status efetivo, sem chave Pix) |
+| `/events/:slug/guest/contributions/:id/payment` | GET | Convidado | Reabre chave + Copia e Cola de uma cota **pendente** e dentro do prazo |
+| `/events/:slug/guest/contributions/:id` | DELETE | Convidado + rate limit | Cancela uma cota pendente minha (vira `expired`; o valor volta a ficar disponível) |
 | `/events/:slug/guest/gifts/:giftId/claim` | POST | Convidado + rate limit (20/min por IP) | Presente por completo: `{ "method": "pix" }` reserva o valor restante (dados de pagamento, como na cota); `{ "method": "link" }` marca "comprei pelo link" e fecha o presente |
 
 - O token de convidado é **diferente** do token do dono: usa uma chave derivada do `JWT_SECRET`
@@ -292,3 +295,12 @@ npm install -D @types/qrcode --workspace=apps/frontend
 - Erros: `409 GIFT_UNAVAILABLE` (já garantido), `400 NO_PRODUCT_URL` (sem link de compra).
 
 **Setup depois de colar o Dia 3** (uma vez): `cd apps/backend && npx prisma migrate dev`
+
+### Minhas contribuições (Sprint 4, Dia 4)
+
+- Só enxerga e mexe nas cotas criadas pela **própria sessão** de convidado; cota de outra sessão é
+  `404`. Não há nova migration nem dependência.
+- **Reabrir o Pix:** só para cota `pending` dentro do prazo (`409 CONTRIBUTION_NOT_PAYABLE` nos demais).
+- **Cancelar:** reaproveita o status `expired`; o presente é recalculado sob lock (presente
+  comprado pelo link nunca reabre). Já confirmada/expirada: `409 CONTRIBUTION_NOT_CANCELLABLE`.
+- Cancelar **não desfaz** um Pix já feito — só libera o valor no sistema.
