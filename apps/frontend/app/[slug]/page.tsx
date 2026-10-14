@@ -8,14 +8,17 @@ import {
   isGiftClosed,
   type GuestGift,
   type GuestOverview,
+  type MyContribution,
 } from '../../lib/guest';
 import GiftClaim from './GiftClaim';
 import GiftContribute from './GiftContribute';
 import GuestGate from './GuestGate';
 import LeaveButton from './LeaveButton';
+import MyContributions from './MyContributions';
 
 // Página PÚBLICA do evento (o link que o dono compartilha: /<slug>).
-// Sprint 4, Dia 1: dados reais; Dia 2: reservar cota; Dia 3: presente completo. Fluxo:
+// Sprint 4: Dia 1 dados reais; Dia 2 reservar cota; Dia 3 presente completo;
+// Dia 4 "minhas contribuições". Fluxo:
 //   sem cookie de sessão  → porta de entrada (senha + nome)
 //   com cookie            → busca a visão do convidado no backend
 //   backend diz 401       → sessão vencida/inválida → porta de entrada
@@ -40,9 +43,17 @@ function MessageState({ slug, title, message }: { slug: string; title: string; m
 
 function GiftStatusArea({ gift }: { gift: GuestGift }) {
   if (isGiftClosed(gift.status) || gift.availableAmount <= 0) {
+    // Mensagem por motivo: o convidado entende se foi comprado ou só reservado.
+    const message =
+      gift.status === 'purchased_via_link'
+        ? 'Já comprado por outro convidado'
+        : gift.status === 'confirmed'
+          ? 'Presente já garantido'
+          : 'Já reservado por outros convidados';
+
     return (
       <p className="mt-4 rounded-lg bg-[#f6f1f1] px-3 py-2 text-center text-sm font-medium text-[#827573]">
-        Já garantido por um convidado
+        {message}
       </p>
     );
   }
@@ -100,12 +111,21 @@ export default async function EventoConvidadoPage({
     );
   }
 
+  // As cotas do convidado vêm em paralelo com a lista. Se só ELAS falharem, a
+  // página continua (sem a seção); a lista é o que importa.
   let response: Response;
+  let contributionsResponse: Response | null;
   try {
-    response = await fetch(`${apiUrl}/events/${encodeURIComponent(slug)}/guest/overview`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
+    [response, contributionsResponse] = await Promise.all([
+      fetch(`${apiUrl}/events/${encodeURIComponent(slug)}/guest/overview`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      }),
+      fetch(`${apiUrl}/events/${encodeURIComponent(slug)}/guest/contributions`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      }).catch(() => null),
+    ]);
   } catch {
     return (
       <MessageState
@@ -138,6 +158,15 @@ export default async function EventoConvidadoPage({
 
   const { event, guest, gifts }: GuestOverview = await response.json();
 
+  let myContributions: MyContribution[] = [];
+  if (contributionsResponse?.ok) {
+    try {
+      myContributions = await contributionsResponse.json();
+    } catch {
+      // Corpo ilegível: segue sem a seção "Minhas contribuições".
+    }
+  }
+
   // timeZone UTC: a data vem como meia-noite UTC; no Brasil (UTC-3) sem isso
   // apareceria o dia anterior. Mesmo tratamento do painel do dono.
   const formattedDate = new Date(event.eventDate).toLocaleDateString('pt-BR', {
@@ -163,6 +192,9 @@ export default async function EventoConvidadoPage({
           <LeaveButton slug={slug} />
         </p>
       </section>
+
+      {/* MINHAS CONTRIBUIÇÕES (só aparece se este convidado já reservou algo) */}
+      <MyContributions slug={slug} contributions={myContributions} />
 
       {/* PRESENTES */}
       <section className="bg-white px-4 py-14 sm:px-6 sm:py-20">

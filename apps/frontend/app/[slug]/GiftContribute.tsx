@@ -131,11 +131,6 @@ export default function GiftContribute({ slug, gift }: { slug: string; gift: Gue
       <dialog
         ref={dialogRef}
         onClose={handleClosed}
-        // Durante o pagamento, Esc não fecha de primeira: os dados de Pix só
-        // aparecem agora (a tela "Minhas contribuições" chega no Dia 4).
-        onCancel={(event) => {
-          if (step === 'payment') event.preventDefault();
-        }}
         aria-labelledby={`contribute-title-${gift.id}`}
         className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-3xl bg-white p-0 text-[#302b28] shadow-2xl backdrop:bg-black/40"
       >
