@@ -116,9 +116,6 @@ export default async function MeusEventosPage() {
       {/* Overlay */}
       <div className="fixed inset-0 bg-[#fff7f8]/70" />
 
-      {/* Blur */}
-      <div className="fixed inset-0 backdrop-blur-[2px]" />
-
       {/* =========================================================
           DECORAÇÕES
       ========================================================= */}

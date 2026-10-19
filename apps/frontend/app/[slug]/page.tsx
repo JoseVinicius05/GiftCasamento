@@ -16,23 +16,23 @@ import GuestGate from './GuestGate';
 import LeaveButton from './LeaveButton';
 import MyContributions from './MyContributions';
 
-// Página PÚBLICA do evento (o link que o dono compartilha: /<slug>).
-// Sprint 4: Dia 1 dados reais; Dia 2 reservar cota; Dia 3 presente completo;
-// Dia 4 "minhas contribuições". Fluxo:
-//   sem cookie de sessão  → porta de entrada (senha + nome)
-//   com cookie            → busca a visão do convidado no backend
-//   backend diz 401       → sessão vencida/inválida → porta de entrada
-//   backend diz 404       → evento não existe
-function MessageState({ slug, title, message }: { slug: string; title: string; message: string }) {
+function MessageState({
+  slug,
+  title,
+  message,
+}: {
+  slug: string;
+  title: string;
+  message: string;
+}) {
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-[#fff8fb] px-4 py-10">
-      <div className="w-full max-w-md rounded-3xl border border-[#f0dfe2] bg-white/90 p-8 text-center shadow-[0_16px_45px_rgba(115,77,77,0.08)]">
+    <main className="relative flex min-h-dvh w-full items-center justify-center overflow-x-hidden bg-[#fff7f8] px-4 py-8 sm:py-10">
+      <div className="w-full max-w-md rounded-[28px] border border-white/80 bg-white/85 p-6 text-center shadow-[0_20px_60px_rgba(115,77,77,0.12)] backdrop-blur-xl sm:p-8">
         <h1 className="font-serif text-2xl text-[#302b28]">{title}</h1>
         <p className="mt-3 text-sm leading-relaxed text-[#827573]">{message}</p>
-        {/* <a> comum (não onClick) porque esta página é Server Component. */}
         <a
           href={`/${slug}`}
-          className="mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-[#c4777d] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b66b72]"
+          className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#b47b7f] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#a5686e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b47b7f] focus-visible:ring-offset-2 sm:w-auto"
         >
           Tentar novamente
         </a>
@@ -43,7 +43,6 @@ function MessageState({ slug, title, message }: { slug: string; title: string; m
 
 function GiftStatusArea({ gift }: { gift: GuestGift }) {
   if (isGiftClosed(gift.status) || gift.availableAmount <= 0) {
-    // Mensagem por motivo: o convidado entende se foi comprado ou só reservado.
     const message =
       gift.status === 'purchased_via_link'
         ? 'Já comprado por outro convidado'
@@ -52,35 +51,44 @@ function GiftStatusArea({ gift }: { gift: GuestGift }) {
           : 'Já reservado por outros convidados';
 
     return (
-      <p className="mt-4 rounded-lg bg-[#f6f1f1] px-3 py-2 text-center text-sm font-medium text-[#827573]">
+      <p className="mt-2 rounded-xl bg-[#f8f2f2] px-3 py-2.5 text-center text-xs font-medium text-[#827573]">
         {message}
       </p>
     );
   }
 
   const hasShares = gift.reservedAmount > 0;
-  const percent = Math.min(100, Math.round((gift.reservedAmount / gift.price) * 100));
+  const percent = Math.min(
+    100,
+    Math.round((gift.reservedAmount / gift.price) * 100),
+  );
 
   return (
-    <div className="mt-4">
+    <div className="mt-2">
       {hasShares ? (
         <>
           <div
-            className="h-2 overflow-hidden rounded-full bg-[#f3e4e6]"
+            className="h-1.5 overflow-hidden rounded-full bg-[#f3e4e6]"
             role="progressbar"
             aria-valuenow={percent}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-label="Quanto do presente já foi garantido em cotas"
           >
-            <div className="h-full rounded-full bg-[#c4777d]" style={{ width: `${percent}%` }} />
+            <div
+              className="h-full rounded-full bg-[#c4777d] transition-all duration-500"
+              style={{ width: `${percent}%` }}
+            />
           </div>
-          <p className="mt-2 text-xs text-[#827573]">
-            {formatBRL(gift.reservedAmount)} já garantidos · faltam {formatBRL(gift.availableAmount)}
+          <p className="mt-2 text-xs leading-relaxed text-[#827573]">
+            {formatBRL(gift.reservedAmount)} já garantidos · faltam{' '}
+            {formatBRL(gift.availableAmount)}
           </p>
         </>
       ) : (
-        <p className="text-xs text-[#827573]">Ninguém escolheu este presente ainda</p>
+        <p className="text-xs text-[#91807d]">
+          Seja o primeiro a escolher este presente
+        </p>
       )}
     </div>
   );
@@ -111,20 +119,25 @@ export default async function EventoConvidadoPage({
     );
   }
 
-  // As cotas do convidado vêm em paralelo com a lista. Se só ELAS falharem, a
-  // página continua (sem a seção); a lista é o que importa.
   let response: Response;
   let contributionsResponse: Response | null;
+
   try {
     [response, contributionsResponse] = await Promise.all([
-      fetch(`${apiUrl}/events/${encodeURIComponent(slug)}/guest/overview`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      }),
-      fetch(`${apiUrl}/events/${encodeURIComponent(slug)}/guest/contributions`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      }).catch(() => null),
+      fetch(
+        `${apiUrl}/events/${encodeURIComponent(slug)}/guest/overview`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        },
+      ),
+      fetch(
+        `${apiUrl}/events/${encodeURIComponent(slug)}/guest/contributions`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        },
+      ).catch(() => null),
     ]);
   } catch {
     return (
@@ -137,8 +150,6 @@ export default async function EventoConvidadoPage({
   }
 
   if (response.status === 401) {
-    // Sessão vencida ou de outro evento. Não dá pra apagar o cookie daqui
-    // (Server Component); o próprio login seguinte o sobrescreve.
     return <GuestGate slug={slug} expired />;
   }
 
@@ -159,94 +170,180 @@ export default async function EventoConvidadoPage({
   const { event, guest, gifts }: GuestOverview = await response.json();
 
   let myContributions: MyContribution[] = [];
+
   if (contributionsResponse?.ok) {
     try {
       myContributions = await contributionsResponse.json();
     } catch {
-      // Corpo ilegível: segue sem a seção "Minhas contribuições".
+      // Continua sem a seção de contribuições caso a resposta seja inválida.
     }
   }
 
-  // timeZone UTC: a data vem como meia-noite UTC; no Brasil (UTC-3) sem isso
-  // apareceria o dia anterior. Mesmo tratamento do painel do dono.
-  const formattedDate = new Date(event.eventDate).toLocaleDateString('pt-BR', {
-    timeZone: 'UTC',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  });
+  const formattedDate = new Date(event.eventDate).toLocaleDateString(
+    'pt-BR',
+    {
+      timeZone: 'UTC',
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    },
+  );
+
 
   return (
-    <main className="min-h-dvh bg-[#fff8fb] text-[#302b28]">
-      {/* HERO */}
-      <section className="bg-gradient-to-b from-[#f3dfe4] to-[#fff8fb] px-6 py-16 text-center sm:py-24">
-        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#b47b7f] sm:text-sm">
-          {GUEST_EVENT_KICKER[event.eventType]}
-        </p>
-        <h1 className="mx-auto mt-4 max-w-3xl break-words font-serif text-4xl sm:text-6xl">
-          {event.title}
-        </h1>
-        <p className="mt-5 text-lg capitalize text-[#6d5b58]">{formattedDate}</p>
-        <p className="mt-8 text-sm text-[#827573]">
-          Olá, <span className="font-semibold text-[#514340]">{guest.name}</span>! ·{' '}
-          <LeaveButton slug={slug} />
-        </p>
+    <main className="relative min-h-dvh w-full overflow-x-clip bg-[#fffaf9] text-[#302b28]">
+      <section className="relative isolate overflow-hidden border-b border-[#f0dfe2] px-4 py-14 text-center sm:px-6 sm:py-20 lg:py-24">
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 -z-20 bg-[#fff7f8] bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: "url('/background.png')" }}
+        />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 -z-10 bg-gradient-to-b from-[#fffaf9]/65 via-[#fff7f8]/80 to-[#fffaf9]"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -left-20 -top-20 -z-10 h-52 w-52 rounded-full bg-[#e8caca]/35 blur-3xl sm:h-72 sm:w-72"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-24 -right-16 -z-10 h-60 w-60 rounded-full bg-[#ead6d6]/45 blur-3xl sm:h-80 sm:w-80"
+        />
+
+        <div className="mx-auto w-full max-w-4xl rounded-[2rem] border border-white/50 bg-white/20 px-3 py-4 shadow-[0_20px_60px_rgba(115,77,77,0.04)] backdrop-blur-[2px] sm:px-6 sm:py-6">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-[#a96f75] sm:text-sm sm:tracking-[0.35em]">
+            {GUEST_EVENT_KICKER[event.eventType]}
+          </p>
+          <h1 className="mx-auto mt-4 max-w-3xl break-words font-serif text-3xl leading-tight text-[#302b28] sm:text-5xl md:text-6xl">
+            {event.title}
+          </h1>
+          <p className="mt-4 text-base capitalize text-[#6d5b58] sm:mt-5 sm:text-lg">
+            {formattedDate}
+          </p>
+          <p className="mt-8 text-sm text-[#827573]">
+            Olá,{' '}
+            <span className="font-semibold text-[#514340]">
+              {guest.name}
+            </span>{' '}
+            · <LeaveButton slug={slug} />
+          </p>
+        </div>
       </section>
 
-      {/* MINHAS CONTRIBUIÇÕES (só aparece se este convidado já reservou algo) */}
-      <MyContributions slug={slug} contributions={myContributions} />
+      <MyContributions
+        slug={slug}
+        contributions={myContributions}
+        gifts={gifts}
+      />
 
-      {/* PRESENTES */}
-      <section className="bg-white px-4 py-14 sm:px-6 sm:py-20">
-        <div className="mx-auto max-w-6xl">
-          <div className="mb-10 text-center">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-[#b47b7f]">
-              Lista de presentes
+      <section className="relative overflow-hidden bg-[#fff9f8] px-4 py-14 sm:px-6 sm:py-18 lg:py-24">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -left-24 top-24 h-64 w-64 rounded-full bg-[#f1dfe0]/45 blur-3xl"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-24 bottom-12 h-72 w-72 rounded-full bg-[#f6e9e4]/60 blur-3xl"
+        />
+
+        <div className="relative mx-auto w-full max-w-7xl">
+          <header className="mx-auto mb-9 max-w-2xl text-center sm:mb-12 lg:mb-14">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[#efdadd] bg-white/80 px-3.5 py-2 shadow-sm">
+              <span
+                aria-hidden="true"
+                className="h-1.5 w-1.5 rounded-full bg-[#c4777d]"
+              />
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#a96f75] sm:text-xs sm:tracking-[0.24em]">
+                Uma lembrança para guardar
+              </p>
+            </div>
+            <h2 className="font-serif text-3xl leading-tight tracking-tight text-[#302b28] sm:text-4xl md:text-5xl">
+              Escolha algo especial
+            </h2>
+            <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-[#827573] sm:text-base">
+              Cada presente é um jeito carinhoso de fazer parte dessa nova história.
             </p>
-            <h2 className="mt-3 font-serif text-3xl sm:text-4xl">Escolha um presente 🎁</h2>
-          </div>
+            <div
+              aria-hidden="true"
+              className="mx-auto mt-6 h-px w-16 bg-[#d9aeb4]"
+            />
+          </header>
 
           {gifts.length === 0 ? (
-            <p className="mx-auto max-w-md rounded-2xl border border-dashed border-[#e8caca] px-6 py-10 text-center text-sm text-[#827573]">
-              Os anfitriões ainda não cadastraram presentes. Volte em breve!
-            </p>
+            <div className="mx-auto max-w-lg rounded-[1.75rem] border border-dashed border-[#e8caca] bg-white/80 px-6 py-10 text-center shadow-[0_12px_36px_rgba(115,77,77,0.04)] sm:px-8 sm:py-12">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#fff0f2] text-[#b47b7f]">
+                <GiftIcon size={27} strokeWidth={1.5} />
+              </div>
+              <h3 className="mt-4 font-serif text-xl text-[#302b28]">
+                Os presentes estão chegando
+              </h3>
+              <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-[#827573]">
+                Os anfitriões ainda não cadastraram presentes. Volte em breve para conferir a lista.
+              </p>
+            </div>
           ) : (
-            <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <ul className="grid grid-cols-1 items-stretch gap-5 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4">
               {gifts.map((gift) => (
                 <li
                   key={gift.id}
-                  className="flex flex-col overflow-hidden rounded-2xl border border-[#f0dfe2] bg-white shadow-sm"
+                  data-gift-id={gift.id}
+                  className="group flex min-w-0 flex-col overflow-hidden rounded-[1.65rem] border border-[#efdddf] bg-white shadow-[0_8px_26px_rgba(95,63,65,0.045)] transition duration-300 hover:-translate-y-1 hover:border-[#dfbdc1] hover:shadow-[0_18px_42px_rgba(95,63,65,0.10)]"
                 >
-                  {gift.imageUrl ? (
-                    // <img> comum: as imagens vêm por hotlink de lojas (Mercado
-                    // Livre/Amazon). referrerPolicy evita bloqueio por referer.
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={gift.imageUrl}
-                      alt={gift.title}
-                      referrerPolicy="no-referrer"
-                      loading="lazy"
-                      className="h-52 w-full bg-white object-contain p-2"
+                  <div className="relative flex h-56 shrink-0 items-center justify-center overflow-hidden bg-gradient-to-b from-[#fffdfc] to-[#fff5f5] sm:h-60">
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-8 bottom-3 h-5 rounded-full bg-[#e8d6d6]/30 blur-xl"
                     />
-                  ) : (
-                    <div className="flex h-52 w-full items-center justify-center bg-[#fff5f6] text-[#c4a0a4]">
-                      <GiftIcon size={48} strokeWidth={1.3} />
-                    </div>
-                  )}
-
-                  <div className="flex flex-1 flex-col p-5">
-                    <h3 className="break-words text-lg font-semibold leading-snug">{gift.title}</h3>
-                    <p className="mt-3 text-2xl font-bold text-[#c4777d]">{formatBRL(gift.price)}</p>
-
-                    <GiftStatusArea gift={gift} />
-
-                    {/* Dia 3: presentear por completo (Pix ou link da loja). Dia 2: cota. */}
-                    {!isGiftClosed(gift.status) && gift.availableAmount > 0 && (
-                      <div className="mt-5 space-y-2">
-                        <GiftClaim slug={slug} gift={gift} />
-                        <GiftContribute slug={slug} gift={gift} />
+                    {gift.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={gift.imageUrl}
+                        alt={gift.title}
+                        referrerPolicy="no-referrer"
+                        loading="lazy"
+                        className="relative h-full w-full object-contain p-5 transition-transform duration-500 group-hover:scale-[1.025]"
+                      />
+                    ) : (
+                      <div className="relative flex h-full w-full items-center justify-center text-[#c4a0a4]">
+                        <div className="flex h-20 w-20 items-center justify-center rounded-[1.75rem] border border-white/90 bg-white/75 shadow-sm">
+                          <GiftIcon size={39} strokeWidth={1.25} />
+                        </div>
                       </div>
                     )}
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-[#ead2d5] to-transparent"
+                    />
+                  </div>
+
+                  <div className="flex min-w-0 flex-1 flex-col p-5">
+                    <h3 className="min-h-[3rem] break-words font-serif text-lg leading-snug text-[#302b28] sm:text-xl">
+                      {gift.title}
+                    </h3>
+
+                    <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#9b8582]">
+                        Valor do presente
+                      </p>
+                      <p className="text-xl font-bold tracking-tight text-[#a9626b] sm:text-2xl">
+                        {formatBRL(gift.price)}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 border-t border-[#f3e8e8] pt-3">
+                      <GiftStatusArea gift={gift} />
+                    </div>
+
+                    <div className="mt-auto pt-5">
+                      {!isGiftClosed(gift.status) &&
+                        gift.availableAmount > 0 && (
+                          <div className="space-y-2.5">
+                            <GiftClaim slug={slug} gift={gift} />
+                            <GiftContribute slug={slug} gift={gift} />
+                          </div>
+                        )}
+                    </div>
                   </div>
                 </li>
               ))}
@@ -255,7 +352,7 @@ export default async function EventoConvidadoPage({
         </div>
       </section>
 
-      <footer className="border-t border-[#f0dfe2] bg-white px-6 py-8 text-center text-sm text-[#827573]">
+      <footer className="border-t border-[#f0dfe2] bg-gradient-to-r from-[#fff8f8] via-[#fffdfc] to-[#fff8f8] px-4 py-7 text-center text-xs text-[#827573] sm:px-6 sm:py-8 sm:text-sm">
         <p>
           Web<span className="italic text-[#b47b7f]">Gift</span> · {event.title}
         </p>
