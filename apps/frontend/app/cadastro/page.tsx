@@ -112,12 +112,6 @@ export default function CadastroPage() {
         }}
       />
 
-      {/* Camada rosada */}
-      <div className="absolute inset-0 bg-[#fff7f8]/35" />
-
-      {/* Blur suave */}
-      <div className="absolute inset-0 backdrop-blur-[1px]" />
-
       {/* ========================================= */}
       {/* DECORAÇÕES */}
       {/* ========================================= */}

@@ -1,12 +1,10 @@
 import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { randomSuffix, slugifyTitle } from './slug.util';
 
 const MAX_SLUG_ATTEMPTS = 5;
-const BCRYPT_ROUNDS = 10;
 
 // Nunca inclui guestPasswordHash — essa é a única senha que sai do banco
 // pra fora em qualquer resposta deste serviço.
@@ -18,6 +16,7 @@ const PUBLIC_EVENT_FIELDS = {
   slug: true,
   pixKey: true,
   createdAt: true,
+  guestPasswordHash: true,
 } as const;
 
 @Injectable()
@@ -26,8 +25,7 @@ export class EventsService {
 
   async create(dto: CreateEventDto, ownerId: string) {
     const slug = await this.generateUniqueSlug(dto.title);
-    const guestPasswordHash = await bcrypt.hash(dto.guestPassword, BCRYPT_ROUNDS);
-
+    
     return this.prisma.event.create({
       data: {
         ownerId,
@@ -35,7 +33,7 @@ export class EventsService {
         eventType: dto.eventType,
         eventDate: new Date(dto.eventDate),
         slug,
-        guestPasswordHash,
+        guestPasswordHash: dto.guestPassword,
         pixKey: dto.pixKey,
       },
       select: PUBLIC_EVENT_FIELDS,
@@ -97,7 +95,7 @@ export class EventsService {
       throw new NotFoundException('Evento não encontrado');
     }
 
-    const isValid = await bcrypt.compare(password, event.guestPasswordHash);
+    const isValid = password === event.guestPasswordHash;
     if (!isValid) {
       throw new UnauthorizedException('Senha incorreta');
     }
