@@ -77,6 +77,7 @@ export class EventsService {
         ...(dto.eventType !== undefined && { eventType: dto.eventType }),
         ...(dto.eventDate !== undefined && { eventDate: new Date(dto.eventDate) }),
         ...(dto.pixKey !== undefined && { pixKey: dto.pixKey }),
+        ...(dto.guestPasswordHash !== undefined && {guestPasswordHash: dto.guestPasswordHash}),
       },
       select: PUBLIC_EVENT_FIELDS,
     });

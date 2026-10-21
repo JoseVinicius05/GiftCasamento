@@ -328,6 +328,7 @@ export default async function PainelEventoPage({
             initialEventType={event.eventType}
             initialEventDate={eventDateForInput}
             initialPixKey={event.pixKey}
+            initialGuestPassword={event.guestPasswordHash}
           />
         </section>
 

@@ -44,6 +44,7 @@ type Props = {
   initialEventType: EventTypeValue;
   initialEventDate: string;
   initialPixKey: string;
+  initialGuestPassword: string ;
 };
 
 const EVENT_ICONS = {
@@ -76,6 +77,7 @@ export default function EditEventForm({
   initialEventType,
   initialEventDate,
   initialPixKey,
+  initialGuestPassword,
 }: Props) {
   const router = useRouter();
 
@@ -84,6 +86,7 @@ export default function EditEventForm({
     useState<EventTypeValue>(initialEventType);
   const [eventDate, setEventDate] = useState(initialEventDate);
   const [pixKey, setPixKey] = useState(initialPixKey);
+  const [guestPasswordHash, setGuestPassword] = useState(initialGuestPassword);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -173,11 +176,12 @@ export default function EditEventForm({
           eventType,
           eventDate,
           pixKey: pixKey.trim(),
+          guestPasswordHash,
         }),
       });
 
       const data = await response.json();
-
+      console.log(data);
       if (!response.ok) {
         if (response.status === 401) {
           router.push(`/login?redirectTo=/eventos/${slug}`);
@@ -244,6 +248,7 @@ export default function EditEventForm({
               setEventType(initialEventType);
               setEventDate(initialEventDate);
               setPixKey(initialPixKey);
+              setGuestPassword(initialGuestPassword);
               setError(null);
               setSuccess(false);
               setEventOpen(false);
@@ -754,6 +759,49 @@ export default function EditEventForm({
         <p className="mt-2 text-xs text-gray-400">
           Usada pra gerar o QR code com o valor certo quando um
           convidado for pagar um presente.
+        </p>
+
+      </div>
+
+      <div>
+
+        <label
+          htmlFor="title"
+          className={labelClass}
+        >
+          Senha do evento
+        </label>
+
+        <input
+          id="guestPasswordHash"
+          type="text"
+          value={guestPasswordHash}
+          disabled={!isEditing || loading}
+          onChange={(e) =>
+            setGuestPassword(e.target.value)
+          }
+          placeholder="Senha para o evento"
+          className="
+                  w-full
+                  rounded-xl
+                  border
+                  border-gray-300
+                  bg-white/80
+                  px-4
+                  py-3
+                  text-gray-800
+                  outline-none
+                  transition
+                  placeholder:text-gray-400
+                  focus:border-[#c4777d]
+                  focus:ring-2
+                  focus:ring-[#c4777d]/20
+                  !isEditing:cursor-not-allowed disabled:bg-[#f7f1f1]/80 disabled:text-[#827573]
+                "
+        />
+
+        <p className="mt-2 text-xs text-gray-400">
+          Essa senha é para o convidado acessaar a lista dos presentes.
         </p>
 
       </div>

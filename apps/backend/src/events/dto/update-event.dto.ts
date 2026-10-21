@@ -30,4 +30,10 @@ export class UpdateEventDto {
   @IsNotEmpty({ message: 'A chave Pix não pode ficar vazia' })
   @MaxLength(140, { message: 'Chave Pix muito longa' })
   pixKey?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty({ message: 'A senha não pode ficar vazio' })
+  @MaxLength(150, { message: 'Senha muito longa (máximo 150 caracteres)' })
+  guestPasswordHash?: string;
 }
