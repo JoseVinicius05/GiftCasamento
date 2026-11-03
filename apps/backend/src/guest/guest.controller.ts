@@ -11,13 +11,13 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ThrottlerGuard } from '@nestjs/throttler';
 import { GuestAuthGuard, GuestRequest } from '../auth/guest-auth.guard';
 import { ClaimGiftDto } from './dto/claim-gift.dto';
 import { CreateContributionDto } from './dto/create-contribution.dto';
 import { GuestClaimsService } from './guest-claims.service';
 import { GuestContributionsService } from './guest-contributions.service';
 import { GuestMyContributionsService } from './guest-my-contributions.service';
+import { GuestThrottlerGuard } from './guest-throttler.guard';
 import { GuestService } from './guest.service';
 
 // Rotas do CONVIDADO (sessão de convidado, não o JWT do dono). Ficam sob
@@ -39,8 +39,9 @@ export class GuestController {
 
   // Reserva uma cota (valor parcial ou o restante) de um presente. Devolve os
   // dados de pagamento Pix — o único ponto em que a chave sai. Rate limit por
-  // IP além do guard de sessão: cada chamada abre uma transação com lock.
-  @UseGuards(ThrottlerGuard)
+  // SESSÃO (GuestThrottlerGuard) além do guard de sessão: cada chamada abre uma
+  // transação com lock, e o IP que o backend vê é o do servidor do Next.
+  @UseGuards(GuestThrottlerGuard)
   @Post('gifts/:giftId/contributions')
   @HttpCode(HttpStatus.CREATED)
   createContribution(
@@ -55,7 +56,7 @@ export class GuestController {
   // Presentear por completo: `{ method: 'pix' }` paga tudo o que falta (devolve
   // os dados de pagamento, igual à cota) e `{ method: 'link' }` marca "comprei
   // pelo link" e fecha o presente. Mesmo rate limit da criação de cota.
-  @UseGuards(ThrottlerGuard)
+  @UseGuards(GuestThrottlerGuard)
   @Post('gifts/:giftId/claim')
   @HttpCode(HttpStatus.CREATED)
   claim(
@@ -85,7 +86,7 @@ export class GuestController {
 
   // Cancela uma cota pendente minha (vira `expired`; o valor volta a ficar
   // disponível). Rate limit: abre transação com lock, como criar cota.
-  @UseGuards(ThrottlerGuard)
+  @UseGuards(GuestThrottlerGuard)
   @Delete('contributions/:contributionId')
   @HttpCode(HttpStatus.OK)
   cancelMyContribution(

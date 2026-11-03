@@ -1,6 +1,6 @@
 # Sistema de Lista de Presentes por Evento — Planejamento MVP
 
-> **Revisão 8 — Dia 4 da Sprint 4 implementado** (revisão 7: Dia 3).
+> **Revisão 9 — Dia 5 da Sprint 4 implementado + planejamento da Sprint 5** (revisão 8: Dia 4).
 > Tudo que mudou em relação à versão anterior está marcado com **🔄 Alterado** ou **🆕 Novo**.
 > O motivo das mudanças: testes reais contra a API do Mercado Livre mostraram que o
 > `GET /items/{id}` é bloqueado para anúncios de outros vendedores (mesmo com OAuth) e que o
@@ -18,6 +18,7 @@
 | 6 | Sprint 4, Dia 2 | **Cota por Pix** com reserva atômica (lock da linha do presente) e expiração de 48h; **Pix Copia e Cola + QR Code** antecipados do Dia 3 (QR aprovado, dependência `qrcode`); `Contribution.guestSessionId` migrado; valor mínimo da cota = R$ 10 ou o restante; **decisão:** presente comprado pelo link com cotas → valores das cotas vão para o fundo extra |
 | 7 | Sprint 4, Dia 3 | **Presente completo:** `POST …/guest/gifts/:giftId/claim` com `pix` (cota do valor restante, mesma tela de pagamento) ou `link` ("comprei pelo link", fecha o presente); **cotas confirmadas viram linhas do `EventExtraFunds`** na mesma transação; migration `gifts.purchased_via_link_by/at`; dono vê quem comprou pelo link |
 | 8 | Sprint 4, Dia 4 | **"Minhas contribuições":** listar as cotas da própria sessão, **reabrir o Pix** de uma cota pendente e **cancelar** (reaproveita `expired`, sem migration); cancelar recalcula o status do presente sob lock; estados dos cards por motivo (comprado / reservado / garantido); `Esc` volta a fechar o modal de pagamento |
+| 9 | Sprint 4, Dia 5 + Sprint 5 | **Dia 5:** lock da linha do presente no `PATCH` de preço e no `DELETE` (fecha as janelas contra cotas), status **derivado** também na API do dono, **teste de concorrência real** (`npm run test:integration`), rate limit das rotas do convidado **por sessão** (não por IP), testes de controller/DTO de presentes, `ErrorState` corrigido, roteiro de validação em produção. **Sprint 5 detalhada dia a dia (seção 11)** |
 
 ---
 
@@ -214,8 +215,8 @@ Premissa: 2 pessoas em backend (Nest/Postgres), 2 em frontend (Next.js), com rev
 | 1 | Setup + fundamentos + login/autenticação | Repo, hosting no ar, schema inicial, cadastro/login em produção | ✅ |
 | 2 | Criação de evento | Evento (slug + senha de convidado), painel do evento | ✅ |
 | 3 | Cadastro de presentes + modelo de cotas | Formulário de presente (metadados + fallback manual), preço-alvo, schema de Contribution/EventExtraFunds | 🔄 Dias 1–4 ✅; Dia 5 (testes de controller/DTO, validação em produção) virou débito da Sprint 4 |
-| 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | 🔄 em andamento (Dias 1–4 ✅) — ver seção 10 |
-| 5 | Pagamento manual + confirmação + saldo extra | Painel de confirmação, `EventExtraFunds`, e-mail/notificação simples | — |
+| 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | ✅ Dias 1–5 no código; falta só o roteiro de validação em produção — ver seção 10 |
+| 5 | Pagamento manual + confirmação + saldo extra | Painel de confirmação, `EventExtraFunds`, e-mail/notificação simples | 📋 detalhada (seção 11) |
 | 6 | Testes, polimento e go-live | Concorrência, UX, bugs, deploy final — **buffer** | — |
 
 A sprint 6 é deliberadamente um buffer, não uma sprint de features novas.
@@ -369,7 +370,7 @@ O log do backend diz qual camada funcionou; `test-product-metadata.mjs` testa ca
 - [x] Ownership check nos endpoints de presente segue o padrão 404
 - [ ] Refresh automático do token do ML comprovadamente funcionando, sem token em log
 - [ ] 🔄 2–3 URLs reais de cada loja testadas manualmente (ML: catálogo e clássica; Amazon)
-- [ ] Tudo testado em produção
+- [ ] Tudo testado em produção — roteiro do Dia 5 (itens 1–8)
 - [x] CRUD de presentes com preço obrigatório e regras de `PATCH` (Dia 4)
 - [x] Token service com refresh concorrente, retry único de 401 e `invalid_grant` sem bloquear
       o cadastro (Dia 3)
@@ -495,8 +496,8 @@ dá mensagem clara; o token nunca aparece no JavaScript; o dono copia o link cer
   erros traduzidos (409 atualiza a lista e o valor disponível), e a tela de pagamento com **QR
   Code**, **Copia e Cola**, **chave Pix** e prazo de 48h. A biblioteca `qrcode` carrega só nessa
   tela (import dinâmico).
-- ⚠️ **Limitação até o Dia 4:** os dados de pagamento aparecem **uma vez** (Esc não fecha de
-  primeira durante o pagamento, e a tela avisa para guardar/printar).
+- ✅ **Limitação resolvida no Dia 4:** os dados de pagamento apareciam **uma vez só**; agora o
+  convidado os reabre em "Minhas contribuições" enquanto a reserva valer.
 
 **Pronto quando:** duas cotas somam certo, a que passaria do preço é recusada com o valor
 disponível, a barra de progresso reflete a reserva e o QR abre no app do banco.
@@ -587,16 +588,87 @@ nunca aparece nem pode ser mexida.
 > contribuições" — o `purchased_via_link_by` guarda só o nome, não a sessão. Se virar necessidade
 > (ex.: "desfazer minha compra"), guardar também o `sid` do convidado (migration pequena).
 
-### Dia 5 (Sexta) — Concorrência, débitos da Sprint 3 e fecho
+### Dia 5 (Sexta) — ✅ Implementado — Concorrência, débitos da Sprint 3 e auditoria
 
-- **Teste de concorrência real** (script contra Postgres, N requisições paralelas na mesma cota):
-  a soma das cotas **nunca** passa do preço. É o critério de aceite da sprint.
-- `GiftsService.update`: travar a linha do presente ao validar preço × reservado (fecha a janela
-  PATCH × cota). `GiftsService.remove`: contagem + exclusão dentro de transação e `P2003` → 409.
-- Débitos da Sprint 3: testes de **controller/DTO** (preview e CRUD) e **validação em produção** de
-  ML (catálogo e clássico) e Amazon (`a.co`); remover camadas do ML que nunca respondem.
-- Débito do frontend: `ErrorState` do painel do dono recebe `onClick` dentro de Server Component.
-- README/CLAUDE.md, checklist e retro.
+O plano original tinha 5 itens. A auditoria do código (feita contra o que os Dias 1–4 entregaram)
+confirmou todos e **achou mais três** — marcados com 🆕.
+
+**Concorrência real**
+- `guest-concurrency.integration.spec.ts` + `npm run test:integration` (config própria,
+  `jest.integration.json`; no `npm test` comum o arquivo aparece como *skipped*). Roda **contra um
+  Postgres de verdade** — é o que prova o `SELECT … FOR UPDATE`, que os testes unitários (banco
+  simulado) não provam. Cenários, todos com `N` requisições simultâneas (`CONCURRENCY_N`, padrão 30):
+  1. 30 convidados reservando R$ 10 de um presente de R$ 100 → **exatamente 10** passam;
+  2. valores variados (sementes fixas) → soma aceita = soma no banco ≤ preço, status gravado = saldo;
+  3. "pagar tudo por Pix" em paralelo → só **um** leva;
+  4. cotas × "comprei pelo link" → no máximo **uma** compra pelo link, estado final coerente;
+  5. cancelar × criar cotas → soma ≤ preço, status fecha com o saldo;
+  6. `PATCH` de preço × cotas → preço final **nunca** abaixo do reservado;
+  7. `DELETE` do presente × cotas → apaga (cotas levam 404) **ou** recusa (409) — nunca erro de FK.
+  Qualquer erro que não seja 404/409 (timeout, deadlock, FK) reprova o teste.
+- **Segurança do teste:** recusa rodar com `NODE_ENV=production` ou num banco que não seja local
+  (`ALLOW_REMOTE_DB_TESTS=1` força, por conta e risco); cria e apaga só as próprias linhas.
+
+**Janelas fechadas no dono (`GiftsService`)**
+- `update`: transação com a linha do presente **travada** (mesmo lock de cota, link e cancelamento);
+  reservado lido **depois** do lock. Fecha a janela "PATCH de preço × cota nova" registrada nos riscos
+  desde a Sprint 3. O novo preço também **regrava o status** quando muda a cobertura (baixar o preço
+  até o reservado → `fully_funded`).
+- `remove`: contagem de cotas + exclusão na mesma transação com lock; `P2003` (FK) vira 409, não 500.
+
+**🆕 Achados da auditoria (corrigidos)**
+1. **Status velho na API do dono.** Cota pendente que expira não atualiza o banco (expiração
+   preguiçosa). O convidado já via o status derivado desde o Dia 2, mas o **dono** via o gravado — um
+   presente "garantido" que o convidado via livre — e um `fully_funded` velho **travava a edição de
+   preço**. Agora `GET/PATCH /events/:slug/gifts` devolvem o status **derivado** (`deriveGiftStatus`) e
+   a regra "preço editável" usa o derivado.
+2. **Rate limit por IP não funciona atrás do BFF.** Todo o tráfego do convidado passa pelo servidor do
+   Next; o backend vê o IP de **saída** dele, então muitos convidados (e eventos) caíam no mesmo balde.
+   As 3 rotas autenticadas que abrem transação (cota, presentear, cancelar) agora são limitadas
+   **por sessão** (`GuestThrottlerGuard`, 20/min por `sid`). O `/access` e as rotas do dono
+   (login, preview) **continuam por IP** — ver decisão 3 da seção 11.
+3. **`ErrorState` do painel do dono** passava `onClick` dentro de um Server Component (quebraria assim
+   que uma tela de erro fosse renderizada). Virou o componente de cliente `RetryButton`
+   (`router.refresh()`). Varredura nos demais arquivos: sem outros casos.
+
+**Débitos da Sprint 3**
+- Testes de **controller** (`GiftsController`, `GuestController`): guards no nível da classe, rate
+  limit só onde deve, ownership **antes** de qualquer chamada paga no preview, dono/sessão sempre
+  vindos do token — regressões de segurança que antes não tinham teste. Testes de **DTO**
+  (`CreateGiftDto`, `UpdateGiftDto`, `PreviewGiftDto`): só http/https, texto vazio vira "não enviado",
+  `null` apaga link/imagem, preço positivo com 2 casas e dentro do limite do banco.
+- O `remove` não tinha **nenhum** teste; agora tem (404, não-`available`, histórico de cotas, lock,
+  `P2003`).
+- **Validação em produção do ML (catálogo e clássico) e da Amazon (`a.co`)** e **remover camadas do ML
+  que nunca respondem**: continuam **manuais** — dependem do ambiente real e dos logs. O código **já
+  registra qual camada respondeu** (`ML: dados obtidos pelo catálogo`, `… pelo multiget`,
+  `Catálogo … descoberto pelo redirect`, `nenhuma camada trouxe dados`). Regra para decidir: depois de
+  ~2 semanas de uso real, camada com **zero** respostas nos logs é removida na Sprint 6 (buffer).
+
+**Pronto quando:** `npm test` e `npm run test:integration` verdes, e o roteiro abaixo executado em produção.
+
+#### Roteiro de validação em produção (Sprint 4)
+
+Faça com **um evento de teste** seu, em duas janelas (dono e convidado em aba anônima):
+
+1. **Convidado entra:** senha errada → mensagem clara; certa + nome → lista real; F5 mantém a sessão;
+   cookie `gift_guest_<slug>` é **HttpOnly**; a chave Pix **não** aparece na resposta do overview.
+2. **Cota:** reservar R$ 10 e um valor qualquer; a 3ª que passaria do preço é recusada com o valor
+   disponível; o QR abre no app do banco com o valor certo; sem QR (chave estranha) só a chave.
+3. **Presente completo:** "Pagar tudo por Pix" reserva o restante; "Já comprei" fecha o presente e some
+   das ações do outro convidado; o dono vê "Comprado pelo link por …".
+4. **Minhas contribuições:** fechar o modal e reabrir o Pix; cancelar devolve o valor; outra sessão não
+   enxerga a cota.
+5. **Expiração:** com uma cota pendente, ajuste `expires_at` no banco para o passado — o presente volta
+   a aparecer disponível para o convidado **e** para o dono, e o dono consegue editar o preço.
+6. **Concorrência:** em duas abas, reservar "o restante" quase juntas → só uma passa. Para o teste
+   automático use **só banco local** (ou um *branch* descartável, nunca o de produção):
+   `npm run test:integration`.
+7. **Metadados:** `a.co` real e um anúncio clássico do ML (`http/gifts.http`, blocos 8–9); anote nos logs
+   do Render qual camada respondeu.
+8. **Conexão com o banco:** confirme que o `DATABASE_URL` de produção suporta transações interativas
+   com `SELECT … FOR UPDATE` (se for o endpoint *pooled* do Neon, confira a flag de pooler na
+   documentação do Neon/Prisma) — é o que garante o lock em produção.
 
 ### Checklist de saída da Sprint 4
 
@@ -607,9 +679,10 @@ nunca aparece nem pode ser mexida.
 - [x] Pix Copia e Cola + QR Code na tela de pagamento — Dia 2 (antecipado do Dia 3)
 - [x] Presente completo por Pix integral ou pelo link — Dia 3
 - [x] Convidado vê, reabre o Pix e cancela as próprias cotas — Dia 4
-- [ ] Teste de concorrência: soma de cotas nunca passa do preço
-- [ ] Débitos da Sprint 3 fechados ou re-datados
-- [ ] Tudo testado em produção
+- [x] Teste de concorrência **escrito** (7 cenários, `npm run test:integration`) — Dia 5
+- [ ] Teste de concorrência **executado** com Postgres local (precisa de banco; ainda não rodado)
+- [x] Débitos da Sprint 3 fechados ou re-datados — testes de controller/DTO feitos; validação em produção → roteiro acima; remoção de camadas do ML → Sprint 6 com regra
+- [ ] Tudo testado em produção — roteiro do Dia 5 (itens 1–8)
 
 ### Riscos novos
 
@@ -665,3 +738,158 @@ nunca aparece nem pode ser mexida.
 - **Cancelar depois de pagar:** o cancelamento só libera o valor no sistema — não desfaz um Pix já
   feito. O aviso na tela pede para falar com os anfitriões nesse caso; o dono só vê o pagamento na
   conta (a confirmação manual é da Sprint 5).
+
+### Riscos novos do Dia 5
+
+- **Rate limit por sessão não impede quem abre várias sessões:** cada `/access` gera uma nova (limite por
+  IP, que atrás do BFF é o IP do Next). Aceito: quem chega aí já tem a senha do evento.
+- **Lock da linha depende do banco:** se um dia o backend rodar atrás de um pooler em modo que não
+  mantenha a transação numa conexão, o `FOR UPDATE` perde o efeito. Item 8 do roteiro cobre isso.
+- **`Gift.status` gravado segue podendo ficar velho** (expiração preguiçosa). Todas as **leituras**
+  (convidado e dono) já usam o derivado; só quem lê o banco direto (relatórios) precisa saber disso.
+
+---
+
+## 11. Detalhamento — Sprint 5 (dia a dia)
+
+**Meta:** o dono acompanha e **confirma** os pagamentos que o convidado diz ter feito, resolve os casos
+de borda do dinheiro (Pix que chega depois do prazo, compra pelo link com cotas), vê o **saldo extra**
+e é avisado quando chega uma cota. O sistema continua **sem mover dinheiro**: tudo é conferência manual.
+
+### Ponto de partida (o que a Sprint 4 deixou)
+
+- A cota nasce `pending` (48h); só o **convidado** mexe nela (reabrir o Pix, cancelar). **O dono não tem
+  tela nem endpoint de cotas** — `confirmed` hoje só existe se alguém alterar o banco à mão.
+- Cota pendente vencida continua `pending` no banco (expiração preguiçosa). As leituras já tratam
+  `expiresAt` no saldo; falta mostrar isso ao dono.
+- `EventExtraFunds` só **recebe** linhas (compra pelo link com cotas confirmadas) e **nada as exibe**.
+- `purchased_via_link` é irreversível; o `Gift.status = confirmed` ("entregue") nunca é gravado.
+- O QR leva o `txid` = id da cota (sem hífens, 25 caracteres) — serve para conciliar, mas **nem todo banco
+  mostra o `txid` no extrato**: a conferência real é por valor, horário e nome do pagador.
+
+### Decisões de desenho propostas (confirmar antes do Dia 2)
+
+1. **Confirmar cota pendente dentro do prazo** → `confirmed` + `confirmedAt`, na transação com o **mesmo
+   lock da linha do presente**; o status gravado do presente é recalculado.
+2. **"Recebi mesmo assim" (cota vencida/cancelada, mas o Pix caiu):** se o presente ainda comporta o
+   valor → a cota vira `confirmed` e conta nele; se **não** comporta (já coberto por outros ou comprado)
+   → o valor vai para o **fundo extra** e a cota fica `expired`. Exige um flag explícito
+   (`acceptExpired: true`) para não acontecer por clique distraído.
+3. **Não recebi** → cota `pending` vira `expired` na hora (reaproveita `expired`, como o cancelamento).
+4. **Cota confirmada num presente já `purchased_via_link`** → o valor vai para o fundo extra (regra do
+   Dia 3 da Sprint 4) e a cota fica `confirmed`.
+5. **Idempotência do fundo extra:** nova coluna `event_extra_funds.contribution_id` (única, opcional).
+   Impede lançar duas vezes a mesma cota e dá rastreabilidade (de qual cota veio cada linha).
+6. **Reverter "comprei pelo link"** (o risco do Dia 3): o dono desfaz → presente volta ao status derivado,
+   `purchased_via_link_by/at` limpos e **as linhas do fundo extra daquele presente são apagadas**
+   (as cotas confirmadas voltam a contar no presente).
+7. **`Gift.status = confirmed`** significa "o dono confirmou que o presente foi comprado/entregue" (como
+   diz o schema). Botão "Marcar como entregue" + "Desfazer"; é o único status terminal que o dono controla.
+8. **Fundo extra é somente leitura no v1** (lista + total + exportar); não existe "marcar como usado".
+9. **Notificação:** indicador no app (contador de cotas pendentes) **primeiro**; e-mail **opcional** atrás
+   de uma chave, e **nunca** bloqueia a reserva (falha de e-mail é só log).
+
+### Dia 1 (Segunda) — Painel de cotas do dono (leitura)
+
+**Backend** (JWT do dono; evento de outro dono = 404, como todo o módulo)
+- Migration: `event_extra_funds.contribution_id` (única, opcional) — decisão 5.
+- `GET /events/:slug/contributions?status=pending|expired|confirmed`: cotas do evento com presente,
+  nome do convidado, valor, `createdAt`, `expiresAt`, `confirmedAt` e **referência** (o `txid` do QR). O
+  `status` já vem **efetivo** (pendente com prazo vencido = `expired`). Ordem: pendentes vivas (a que vence
+  primeiro no topo) → vencidas → confirmadas.
+- `GET /events/:slug/summary`: confirmado (R$ e nº), pendente vivo, vencido, fundo extra (R$) e nº de
+  presentes comprados pelo link.
+- Testes: ownership, filtro por status e por evento, status efetivo, totais sem dupla contagem.
+
+**Frontend**
+- Seção **"Cotas"** no painel `/eventos/[slug]`: cartões de resumo + lista com filtros (Pendentes /
+  Vencidas / Confirmadas), referência da cota e contagem regressiva. BFFs GET correspondentes.
+
+**Pronto quando:** o dono vê, por evento, quem reservou o quê, o que vence quando e os totais.
+
+### Dia 2 (Terça) — Confirmar, "Recebi mesmo assim" e rejeitar
+
+**Backend**
+- `POST /events/:slug/contributions/:id/confirm` `{ acceptExpired?: boolean }` e
+  `POST …/reject`, ambos na transação: achar a cota **do evento do dono** → **travar** o presente →
+  **reler** a cota → aplicar as decisões 1–4 → recalcular o status gravado do presente.
+- Respostas claras e idempotentes: já confirmada → 409 `ALREADY_CONFIRMED`; vencida sem
+  `acceptExpired` → 409 `CONTRIBUTION_EXPIRED` (o front então oferece "Recebi mesmo assim").
+- Testes: cada ramo (dentro do prazo, vencida cabendo, vencida não cabendo → fundo extra, presente
+  comprado pelo link → fundo extra, rejeitar), idempotência, ordem lock → leitura → escrita, cota de
+  outro evento = 404.
+
+**Frontend**
+- Botões **Recebi** / **Não recebi** em cada cota pendente, com confirmação; para vencidas, diálogo
+  **"Recebi mesmo assim"** que explica o efeito (entra no presente ou vai para o saldo extra).
+
+**Pronto quando:** o dono confirma uma cota e o presente passa a contar o valor como confirmado; um Pix
+tardio nunca estoura o preço do presente.
+
+### Dia 3 (Quarta) — Presente entregue, reverter compra pelo link e saldo extra
+
+**Backend**
+- `POST /events/:slug/gifts/:giftId/delivered` e `…/undo-delivered` (decisão 7); só a partir de
+  `fully_funded` (derivado) ou `purchased_via_link`.
+- `POST /events/:slug/gifts/:giftId/revert-link` (decisão 6), com o lock do presente.
+- `GET /events/:slug/extra-funds`: linhas (valor, data, nota, presente de origem se ainda existir) + total.
+- Testes: transições permitidas/proibidas, reversão apaga **só** as linhas daquele presente, cotas
+  confirmadas voltam a contar, presente excluído mantém a nota do fundo extra.
+
+**Frontend**
+- No card do presente (dono): **Marcar como entregue / Desfazer** e **Reverter compra pelo link**
+  (com aviso do que acontece com o saldo extra). Tela **"Saldo extra"** (lista + total).
+
+**Pronto quando:** um "Já comprei" errado é desfeito sem deixar sobra no fundo extra.
+
+### Dia 4 (Quinta) — Avisos, resumo e exportação
+
+- **Indicador de pendentes:** contador de cotas pendentes vivas por evento (em `GET /events` e no painel).
+- **E-mail ao dono quando entra uma cota** — só se a decisão 2 da lista abaixo for "sim": provedor
+  (sugestão: Resend, camada gratuita), `MAIL_API_KEY` / `MAIL_FROM`, envio **fora** da transação e com
+  `catch` (nunca bloqueia a reserva); sem a chave configurada, o recurso fica desligado.
+- **Exportar CSV** das cotas e do saldo extra (gerado no frontend a partir das listas; sem endpoint novo).
+- Resumo financeiro final no painel e estados vazios/erros amigáveis nas telas novas.
+
+### Dia 5 (Sexta) — Concorrência, segurança e fecho
+
+- **Estender `guest-concurrency.integration.spec.ts`:** confirmar × cancelar × reservar × "comprei pelo
+  link" no mesmo presente; confirmar a mesma cota duas vezes (só uma linha no fundo extra); reverter
+  link × cota.
+- Regressão de segurança nas rotas novas (todas com JWT do dono + ownership 404; teste de guards como o
+  de `GiftsController`).
+- **Política de rate limit** (decisão 3 abaixo) e o que ficar para a Sprint 6.
+- Documentação, checklist e retro; **roteiro de validação em produção** da Sprint 5.
+
+### Checklist de saída da Sprint 5
+
+- [ ] Dono lista as cotas do evento com status efetivo e totais
+- [ ] Dono confirma / rejeita cota; Pix tardio nunca estoura o preço
+- [ ] Compra pelo link com cotas confirmadas → fundo extra sem duplicar linha
+- [ ] Dono reverte "comprei pelo link" e marca presente como entregue (e desfaz)
+- [ ] Tela de saldo extra (lista + total) e exportação CSV
+- [ ] Aviso de cota pendente (indicador; e-mail se aprovado)
+- [ ] Concorrência estendida **executada** em Postgres local
+- [ ] Tudo testado em produção
+
+### Riscos da Sprint 5
+
+- **Confirmação é conferência humana:** o dono compara valor/horário/nome com o extrato; o `txid` nem
+  sempre aparece. Pagamentos de mesmo valor próximos no tempo podem confundir — por isso a referência e o
+  nome do convidado ficam visíveis em cada cota.
+- **Confirmar errado:** não há "desconfirmar" cota na Sprint 5 (só presente entregue e compra pelo link).
+  Se virar necessidade: cota confirmada → `expired` com trilha no fundo extra, na Sprint 6.
+- **E-mail:** entregabilidade (SPF/DKIM do remetente) e custo ficam fora do núcleo; é opcional por isso.
+- **Saldo extra é só anotação:** o dinheiro já está na conta do dono; o sistema não controla uso.
+
+### Decisões a confirmar com o time
+
+1. **"Recebi mesmo assim"** para cota vencida: cabendo → confirma no presente; não cabendo → fundo extra
+   (proposta acima, com a migration `contribution_id`). De acordo?
+2. **E-mail ao dono:** entra na Sprint 5 (provedor + chaves) ou só o indicador no app por enquanto?
+3. **Rate limit do `/access` e das rotas do dono** (hoje por IP, que atrás do BFF é o IP do Next).
+   Opções: **(A)** por *slug* no `/access` (ex.: 60/min por evento) e por usuário nas rotas do dono —
+   sem mudança de infraestrutura; **(B)** o BFF repassa o IP real com um segredo compartilhado
+   (nova variável nos dois serviços); **(C)** manter como está. Recomendação: **A**.
+4. **Reverter "comprei pelo link" apaga as linhas do fundo extra** daquele presente (decisão 6): ok?
+5. **Fundo extra somente leitura** no v1 (sem "marcar como usado"): ok?
