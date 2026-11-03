@@ -304,3 +304,15 @@ npm install -D @types/qrcode --workspace=apps/frontend
 - **Cancelar:** reaproveita o status `expired`; o presente é recalculado sob lock (presente
   comprado pelo link nunca reabre). Já confirmada/expirada: `409 CONTRIBUTION_NOT_CANCELLABLE`.
 - Cancelar **não desfaz** um Pix já feito — só libera o valor no sistema.
+
+## Testes
+
+| Comando (em `apps/backend`) | O que roda | Precisa de banco? |
+|---|---|---|
+| `npm test` | Testes unitários (Jest) — lógica com o banco simulado. O teste de concorrência aparece como *skipped*. | Não |
+| `npm run test:integration` | **Teste de concorrência real** (`guest-concurrency.integration.spec.ts`): N requisições simultâneas contra o mesmo presente — cotas, "comprei pelo link", cancelamento, `PATCH` de preço e exclusão. A soma das cotas nunca pode passar do preço. | **Sim** — Postgres **local** (`docker compose up -d`) |
+
+- O teste de integração cria e apaga só as próprias linhas, e **recusa rodar** em produção ou em banco
+  remoto (`ALLOW_REMOTE_DB_TESTS=1` força, por sua conta e risco). `CONCURRENCY_N=50` aumenta a carga.
+- Antes de ir a produção, siga o **roteiro de validação** do Dia 5 em `docs/planejamento-mvp.md`
+  (seção 10).

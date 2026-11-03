@@ -224,3 +224,22 @@ revisada com isso em mente.
   `PixPaymentView` com `reopened`, BFF GET/DELETE via `forwardGuestRequest` (`lib/guest-proxy.ts`).
   A página busca overview e cotas em paralelo; falha só nas cotas não derruba a lista.
 - Compra pelo link NÃO aparece nas "minhas contribuições" (só guarda o nome, não a sessão).
+
+### Implementado no Dia 5 da Sprint 4 (concorrência e auditoria)
+- **Toda operação que mexe num presente trava a MESMA linha** (`SELECT … FOR UPDATE` em
+  `gifts`, filtrando por `event_id`) e só DEPOIS lê saldo/estado: criar cota, "comprei pelo link",
+  cancelar cota e — novo — `GiftsService.update` e `GiftsService.remove` (transação). Operação nova
+  que altere o presente ou suas cotas **deve** seguir o mesmo padrão (travar → reler → gravar).
+- A API do dono (`GET/PATCH /events/:slug/gifts`) devolve o status **derivado** (`deriveGiftStatus`),
+  como o convidado. A regra "preço editável" também usa o derivado. O `status` gravado pode ficar velho
+  (cota pendente que expira não atualiza o banco) — nunca decidir nada lendo só o gravado.
+- `remove` conta TODAS as cotas (inclusive expiradas) e traduz `P2003` em 409.
+- Rate limit das rotas autenticadas do convidado (cota, presentear, cancelar) é **por sessão**
+  (`GuestThrottlerGuard`, tracker = `req.guest.sid`), não por IP: atrás do BFF o backend só enxerga o IP
+  do servidor do Next. `/access` e as rotas do dono seguem por IP (decisão pendente, seção 11).
+- Testes: `npm test` (unitários, banco simulado) e `npm run test:integration` (**Postgres local**,
+  `guest-concurrency.integration.spec.ts`; recusa produção/banco remoto). Os specs de controller
+  (`GiftsController`, `GuestController`) verificam guards e rate limit via metadata do Nest — se
+  mudar um guard, o teste acusa.
+- `ErrorState` do painel do dono usa `RetryButton` (componente de cliente): Server Component **não**
+  pode receber `onClick`.

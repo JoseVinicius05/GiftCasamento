@@ -24,21 +24,43 @@ function giftRow(overrides: Record<string, unknown> = {}) {
 
 describe('GiftsService', () => {
   let prisma: {
-    gift: { create: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
-    contribution: { groupBy: jest.Mock };
+    gift: {
+      create: jest.Mock;
+      findMany: jest.Mock;
+      findFirst: jest.Mock;
+      update: jest.Mock;
+      delete: jest.Mock;
+    };
+    contribution: { groupBy: jest.Mock; count: jest.Mock };
+    $queryRaw: jest.Mock;
+    $transaction: jest.Mock;
   };
+  // Ordem em que o banco foi tocado (lock → leitura → escrita).
+  let order: string[];
   let eventsService: { findBySlugForOwner: jest.Mock };
   let service: GiftsService;
 
   beforeEach(() => {
+    order = [];
     prisma = {
       gift: {
         create: jest.fn(),
         findMany: jest.fn(),
-        findFirst: jest.fn(),
+        findFirst: jest.fn().mockImplementation(async () => undefined),
         update: jest.fn(),
+        delete: jest.fn(),
       },
-      contribution: { groupBy: jest.fn().mockResolvedValue([]) },
+      contribution: {
+        groupBy: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      $queryRaw: jest.fn().mockImplementation(async () => {
+        order.push('lock');
+        return [];
+      }),
+      // O client da transação é o próprio mock: o que importa aqui é o que
+      // roda DENTRO do callback (e em que ordem).
+      $transaction: jest.fn().mockImplementation(async (callback: any) => callback(prisma)),
     };
     eventsService = { findBySlugForOwner: jest.fn().mockResolvedValue(EVENT) };
     service = new GiftsService(prisma as any, eventsService as any);
@@ -113,6 +135,19 @@ describe('GiftsService', () => {
       expect(result[1]).toMatchObject({ purchasedViaLinkBy: null, purchasedViaLinkAt: null });
     });
 
+    it('o status é DERIVADO das cotas, não o gravado (reservas vencidas liberam o presente)', async () => {
+      prisma.gift.findMany.mockResolvedValue([
+        giftRow({ id: 'g1', status: 'fully_funded' }), // gravado velho: nada reservado agora
+        giftRow({ id: 'g2', status: 'available' }), // gravado velho: já tem cota viva
+        giftRow({ id: 'g3', status: 'purchased_via_link' }), // terminal: não muda
+      ]);
+      prisma.contribution.groupBy.mockResolvedValue([{ giftId: 'g2', _sum: { amount: decimal(100) } }]);
+
+      const result = await service.findAll('casamento-x', OWNER_ID);
+
+      expect(result.map((gift) => gift.status)).toEqual(['available', 'partially_funded', 'purchased_via_link']);
+    });
+
     it('sem presentes: devolve lista vazia e nem consulta cotas', async () => {
       prisma.gift.findMany.mockResolvedValue([]);
 
@@ -184,11 +219,68 @@ describe('GiftsService', () => {
 
     it('presente já totalmente pago não aceita mudança de preço (409)', async () => {
       prisma.gift.findFirst.mockResolvedValue(giftRow({ status: 'fully_funded' }));
+      prisma.contribution.groupBy.mockResolvedValue([{ giftId: 'gift-1', _sum: { amount: decimal(300) } }]);
 
       const promise = service.update('casamento-x', 'gift-1', { price: 999 }, OWNER_ID);
 
       await expect(promise).rejects.toBeInstanceOf(ConflictException);
       expect(prisma.gift.update).toHaveBeenCalledTimes(0);
+    });
+
+    it('fully_funded VELHO (as cotas pendentes expiraram) NÃO trava mais o preço', async () => {
+      prisma.gift.findFirst.mockResolvedValue(giftRow({ status: 'fully_funded' })); // nada reservado agora
+      prisma.gift.update.mockResolvedValue(giftRow({ price: decimal(350) }));
+
+      const result = await service.update('casamento-x', 'gift-1', { price: 350 }, OWNER_ID);
+
+      // O banco também é corrigido: fully_funded → available.
+      expect(prisma.gift.update.mock.calls[0][0].data).toEqual({ price: 350, priceSource: 'manual', status: 'available' });
+      expect(result.status).toBe('available');
+    });
+
+    it('comprado pelo link não aceita mudança de preço (409), mesmo sem cotas', async () => {
+      prisma.gift.findFirst.mockResolvedValue(giftRow({ status: 'purchased_via_link' }));
+
+      const promise = service.update('casamento-x', 'gift-1', { price: 999 }, OWNER_ID);
+
+      await expect(promise).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.gift.update).toHaveBeenCalledTimes(0);
+    });
+
+    it('baixar o preço até o valor reservado grava o status coberto (fully_funded)', async () => {
+      prisma.gift.findFirst.mockResolvedValue(giftRow({ status: 'partially_funded' }));
+      prisma.contribution.groupBy.mockResolvedValue([{ giftId: 'gift-1', _sum: { amount: decimal(200) } }]);
+      prisma.gift.update.mockResolvedValue(giftRow({ price: decimal(200), status: 'fully_funded' }));
+
+      const result = await service.update('casamento-x', 'gift-1', { price: 200 }, OWNER_ID);
+
+      expect(prisma.gift.update.mock.calls[0][0].data).toEqual({
+        price: 200,
+        priceSource: 'manual',
+        status: 'fully_funded',
+      });
+      expect(result.status).toBe('fully_funded');
+    });
+
+    it('TRAVA a linha do presente antes de ler o reservado e só depois grava', async () => {
+      prisma.gift.findFirst.mockImplementation(async () => {
+        order.push('findGift');
+        return giftRow();
+      });
+      prisma.contribution.groupBy.mockImplementation(async () => {
+        order.push('reserved');
+        return [];
+      });
+      prisma.gift.update.mockImplementation(async () => {
+        order.push('update');
+        return giftRow({ price: decimal(350) });
+      });
+
+      await service.update('casamento-x', 'gift-1', { price: 350 }, OWNER_ID);
+
+      // É o que fecha a janela PATCH de preço × criação de cota.
+      expect(order).toEqual(['lock', 'findGift', 'reserved', 'update']);
+      expect(prisma.$queryRaw.mock.calls[0].slice(1)).toEqual(['gift-1', 'event-1']);
     });
 
     it('mas o título de um presente já pago continua editável', async () => {
@@ -225,6 +317,87 @@ describe('GiftsService', () => {
 
       expect(prisma.gift.update).toHaveBeenCalledTimes(0);
       expect(result.title).toBe('Liquidificador');
+    });
+  });
+
+  describe('remove', () => {
+    it('presente de outro evento (ou id inexistente): 404 e nada é apagado', async () => {
+      prisma.gift.findFirst.mockResolvedValue(null);
+
+      await expect(service.remove('casamento-x', 'gift-9', OWNER_ID)).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(prisma.gift.findFirst.mock.calls[0][0].where).toEqual({ id: 'gift-9', eventId: 'event-1' });
+      expect(prisma.gift.delete).toHaveBeenCalledTimes(0);
+    });
+
+    it('evento de outro dono: o 404 do ownership propaga e nenhuma transação é aberta', async () => {
+      eventsService.findBySlugForOwner.mockRejectedValue(new NotFoundException('Evento não encontrado'));
+
+      await expect(service.remove('casamento-x', 'gift-1', OWNER_ID)).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('presente com movimentação (não available): 409 e nada é apagado', async () => {
+      for (const status of ['partially_funded', 'fully_funded', 'purchased_via_link', 'confirmed']) {
+        prisma.gift.findFirst.mockResolvedValue(giftRow({ status }));
+
+        await expect(service.remove('casamento-x', 'gift-1', OWNER_ID)).rejects.toBeInstanceOf(ConflictException);
+      }
+      expect(prisma.gift.delete).toHaveBeenCalledTimes(0);
+    });
+
+    it('presente com histórico de cotas (mesmo expiradas): 409 e nada é apagado', async () => {
+      prisma.gift.findFirst.mockResolvedValue(giftRow());
+      prisma.contribution.count.mockResolvedValue(1);
+
+      await expect(service.remove('casamento-x', 'gift-1', OWNER_ID)).rejects.toBeInstanceOf(ConflictException);
+
+      // Conta TODAS as cotas do presente, sem filtrar por status.
+      expect(prisma.contribution.count.mock.calls[0][0]).toEqual({ where: { giftId: 'gift-1' } });
+      expect(prisma.gift.delete).toHaveBeenCalledTimes(0);
+    });
+
+    it('presente livre e sem cotas é apagado', async () => {
+      prisma.gift.findFirst.mockResolvedValue(giftRow());
+
+      await service.remove('casamento-x', 'gift-1', OWNER_ID);
+
+      expect(prisma.gift.delete).toHaveBeenCalledWith({ where: { id: 'gift-1' } });
+    });
+
+    it('TRAVA a linha, depois confere o histórico e só então apaga (mesma transação)', async () => {
+      prisma.gift.findFirst.mockImplementation(async () => {
+        order.push('findGift');
+        return giftRow();
+      });
+      prisma.contribution.count.mockImplementation(async () => {
+        order.push('count');
+        return 0;
+      });
+      prisma.gift.delete.mockImplementation(async () => {
+        order.push('delete');
+        return {};
+      });
+
+      await service.remove('casamento-x', 'gift-1', OWNER_ID);
+
+      expect(order).toEqual(['lock', 'findGift', 'count', 'delete']);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('se o banco recusar por chave estrangeira (P2003), vira 409 e não 500', async () => {
+      prisma.gift.findFirst.mockResolvedValue(giftRow());
+      prisma.gift.delete.mockRejectedValue(Object.assign(new Error('FK'), { code: 'P2003' }));
+
+      await expect(service.remove('casamento-x', 'gift-1', OWNER_ID)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('outros erros do banco continuam sendo erro (não viram 409)', async () => {
+      prisma.gift.findFirst.mockResolvedValue(giftRow());
+      prisma.gift.delete.mockRejectedValue(Object.assign(new Error('timeout'), { code: 'P1001' }));
+
+      await expect(service.remove('casamento-x', 'gift-1', OWNER_ID)).rejects.toThrow('timeout');
     });
   });
 });

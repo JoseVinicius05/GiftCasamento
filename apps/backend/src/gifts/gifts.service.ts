@@ -4,11 +4,13 @@ import { EventsService } from '../events/events.service';
 import { PrismaService } from '../prisma.service';
 import { CreateGiftDto } from './dto/create-gift.dto';
 import { UpdateGiftDto } from './dto/update-gift.dto';
-import { reservedByGift } from './gift-reservation.util';
+import { deriveGiftStatus, reservedByGift } from './gift-reservation.util';
 
 // O preço só pode ser alterado enquanto o presente ainda está "aberto".
 // Depois de fully_funded / purchased_via_link / confirmed, mudar o valor
-// bagunçaria as contas das cotas já pagas.
+// bagunçaria as contas das cotas já pagas. A checagem usa o status DERIVADO
+// das cotas (deriveGiftStatus), não o gravado: cota pendente que expira não
+// atualiza o banco, e um "fully_funded" velho não pode travar o dono.
 const PRICE_EDITABLE_STATUSES = ['available', 'partially_funded'];
 
 function formatBRL(value: number): string {
@@ -26,7 +28,9 @@ function toGiftResponse(gift: any, reservedAmount: number) {
     imageUrl: gift.imageUrl,
     price: Number(gift.price),
     priceSource: gift.priceSource,
-    status: gift.status,
+    // Derivado das cotas, igual ao que o convidado vê (o gravado pode estar
+    // velho quando uma cota pendente expira — não há job que o atualize).
+    status: deriveGiftStatus(gift.status, gift.price, reservedAmount),
     createdAt: gift.createdAt,
     // Soma das cotas confirmadas + pendentes ainda dentro das 48h.
     reservedAmount,
@@ -80,98 +84,133 @@ export class GiftsService {
   async update(slug: string, giftId: string, dto: UpdateGiftDto, ownerId: string) {
     const event = await this.eventsService.findBySlugForOwner(slug, ownerId);
 
-    // Procura pelo id E pelo evento: um presente de outro evento (inclusive
-    // de outro dono) é "não encontrado", igual a um id que não existe.
-    const gift = await this.prisma.gift.findFirst({
-      where: { id: giftId, eventId: event.id },
-    });
-    if (!gift) {
-      throw new NotFoundException('Presente não encontrado');
-    }
+    // Tudo numa transação com a linha do presente TRAVADA (SELECT ... FOR
+    // UPDATE) — o mesmo lock da criação de cota, do "comprei pelo link" e do
+    // cancelamento. Assim o dono não consegue baixar o preço no mesmo instante
+    // em que uma cota é aceita: uma das duas operações espera a outra e já
+    // enxerga o resultado dela.
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "gifts" WHERE "id" = ${giftId} AND "event_id" = ${event.id} FOR UPDATE`;
 
-    const reserved = (await reservedByGift(this.prisma, [gift.id])).get(gift.id) ?? 0;
-    const data: Prisma.GiftUncheckedUpdateInput = {};
+        // Procura pelo id E pelo evento: um presente de outro evento (inclusive
+        // de outro dono) é "não encontrado", igual a um id que não existe.
+        const gift = await tx.gift.findFirst({
+          where: { id: giftId, eventId: event.id },
+        });
+        if (!gift) {
+          throw new NotFoundException('Presente não encontrado');
+        }
 
-    if (dto.title !== undefined) data.title = dto.title;
-    if (dto.productUrl !== undefined) data.productUrl = dto.productUrl;
-    if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl;
+        const reserved = (await reservedByGift(tx, [gift.id])).get(gift.id) ?? 0;
+        const data: Prisma.GiftUncheckedUpdateInput = {};
 
-    if (dto.price !== undefined && dto.price !== Number(gift.price)) {
-      if (!PRICE_EDITABLE_STATUSES.includes(gift.status)) {
-        throw new ConflictException(
-          'Não é possível alterar o preço de um presente que já foi totalmente pago ou comprado.',
-        );
-      }
+        if (dto.title !== undefined) data.title = dto.title;
+        if (dto.productUrl !== undefined) data.productUrl = dto.productUrl;
+        if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl;
 
-      // Não deixa o preço cair abaixo do que os convidados já reservaram ou
-      // pagaram em cotas — senão as contas deixariam de fechar.
-      //
-      // Limitação conhecida: entre esta checagem e o update existe uma
-      // janelinha em que uma cota nova pode entrar. A criação de cotas
-      // (Sprint 4) valida contra o preço dentro de uma transação atômica,
-      // então o pior caso é o dono baixar o preço no mesmo instante em que
-      // uma cota é aceita — a Sprint 4 deve revalidar isso.
-      if (dto.price < reserved) {
-        throw new ConflictException(
-          `O preço não pode ficar abaixo de ${formatBRL(reserved)}, que já está reservado ou pago em cotas.`,
-        );
-      }
+        if (dto.price !== undefined && dto.price !== Number(gift.price)) {
+          const currentStatus = deriveGiftStatus(gift.status, gift.price, reserved);
 
-      data.price = dto.price;
-      // Se o dono mexeu no preço, ele é "manual" — mesmo que tenha vindo do
-      // auto-fetch antes.
-      data.priceSource = 'manual';
-    }
+          if (!PRICE_EDITABLE_STATUSES.includes(currentStatus)) {
+            throw new ConflictException(
+              'Não é possível alterar o preço de um presente que já foi totalmente pago ou comprado.',
+            );
+          }
 
-    if (Object.keys(data).length === 0) {
-      return toGiftResponse(gift, reserved);
-    }
+          // Não deixa o preço cair abaixo do que os convidados já reservaram ou
+          // pagaram em cotas — senão as contas deixariam de fechar. O reservado
+          // foi lido COM o presente travado, então nenhuma cota entra entre esta
+          // checagem e o update.
+          if (dto.price < reserved) {
+            throw new ConflictException(
+              `O preço não pode ficar abaixo de ${formatBRL(reserved)}, que já está reservado ou pago em cotas.`,
+            );
+          }
 
-    const updated = await this.prisma.gift.update({ where: { id: gift.id }, data });
-    return toGiftResponse(updated, reserved);
+          data.price = dto.price;
+          // Se o dono mexeu no preço, ele é "manual" — mesmo que tenha vindo do
+          // auto-fetch antes.
+          data.priceSource = 'manual';
+
+          // O preço novo pode mudar se o presente já está coberto (ex.: baixar
+          // o preço até o valor reservado). Grava o status certo agora, em vez
+          // de deixar o banco velho até a próxima cota.
+          const nextStatus = deriveGiftStatus(gift.status, dto.price, reserved);
+          if (nextStatus !== gift.status) {
+            data.status = nextStatus as Prisma.GiftUncheckedUpdateInput['status'];
+          }
+        }
+
+        if (Object.keys(data).length === 0) {
+          return toGiftResponse(gift, reserved);
+        }
+
+        const updated = await tx.gift.update({ where: { id: gift.id }, data });
+        return toGiftResponse(updated, reserved);
+      },
+      { maxWait: 5_000, timeout: 10_000 },
+    );
   }
-
-
 
   async remove(slug: string, giftId: string, ownerId: string): Promise<void> {
     // Confirma que o evento existe e pertence ao usuário autenticado.
     const event = await this.eventsService.findBySlugForOwner(slug, ownerId);
 
-    // O presente precisa pertencer ao evento informado.
-    const gift = await this.prisma.gift.findFirst({
-      where: {
-        id: giftId,
-        eventId: event.id,
-      },
-    });
+    try {
+      // Contagem + exclusão na mesma transação, com o presente travado: uma
+      // cota que entra "no mesmo instante" ou vence a corrida (e aí a contagem
+      // abaixo enxerga e recusa) ou perde (e a criação de cota recebe 404).
+      await this.prisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT "id" FROM "gifts" WHERE "id" = ${giftId} AND "event_id" = ${event.id} FOR UPDATE`;
 
-    if (!gift) {
-      throw new NotFoundException('Presente não encontrado');
-    }
+          // O presente precisa pertencer ao evento informado.
+          const gift = await tx.gift.findFirst({
+            where: { id: giftId, eventId: event.id },
+          });
 
-    // Preserva presentes que já avançaram no fluxo de pagamento ou compra.
-    if (gift.status !== 'available') {
-      throw new ConflictException(
-        'Este presente não pode ser excluído porque já possui movimentação ou histórico de pagamento/compra.',
+          if (!gift) {
+            throw new NotFoundException('Presente não encontrado');
+          }
+
+          // Preserva presentes que já avançaram no fluxo de pagamento ou compra.
+          if (gift.status !== 'available') {
+            throw new ConflictException(
+              'Este presente não pode ser excluído porque já possui movimentação ou histórico de pagamento/compra.',
+            );
+          }
+
+          // Verifica TODAS as contribuições, inclusive as expiradas.
+          // Não apagamos o histórico financeiro dos convidados.
+          const contributionCount = await tx.contribution.count({
+            where: { giftId: gift.id },
+          });
+
+          if (contributionCount > 0) {
+            throw new ConflictException(
+              'Este presente possui histórico de contribuições e não pode ser excluído.',
+            );
+          }
+
+          // O schema define onDelete: SetNull para EventExtraFunds.sourceGift.
+          // Assim, o histórico de saldo extra permanece mesmo após a exclusão.
+          await tx.gift.delete({
+            where: { id: gift.id },
+          });
+        },
+        { maxWait: 5_000, timeout: 10_000 },
       );
+    } catch (error) {
+      // Rede de segurança: se mesmo assim o banco recusar por chave
+      // estrangeira (P2003 — existe uma contribuição apontando pro presente),
+      // é um conflito de negócio, não um erro 500.
+      if ((error as { code?: string } | null)?.code === 'P2003') {
+        throw new ConflictException(
+          'Este presente possui histórico de contribuições e não pode ser excluído.',
+        );
+      }
+      throw error;
     }
-
-    // Verifica TODAS as contribuições, inclusive as expiradas.
-    // Não apagamos o histórico financeiro dos convidados.
-    const contributionCount = await this.prisma.contribution.count({
-      where: { giftId: gift.id },
-    });
-
-    if (contributionCount > 0) {
-      throw new ConflictException(
-        'Este presente possui histórico de contribuições e não pode ser excluído.',
-      );
-    }
-
-    // O schema define onDelete: SetNull para EventExtraFunds.sourceGift.
-    // Assim, o histórico de saldo extra permanece mesmo após a exclusão.
-    await this.prisma.gift.delete({
-      where: { id: gift.id },
-    });
   }
 }

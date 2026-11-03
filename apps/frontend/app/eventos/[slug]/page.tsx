@@ -5,6 +5,7 @@ import EditEventForm from './EditEventForm';
 import AddGiftForm from './AddGiftForm';
 import GiftList from './GiftList';
 import CopyEventLink from './CopyEventLink';
+import RetryButton from './RetryButton';
 import type { Gift as GiftType } from '../../../lib/gifts';
 import {
   ArrowLeft,
@@ -17,7 +18,6 @@ import {
   CookingPot,
   PartyPopper,
   Sparkles,
-  Lock,
 } from 'lucide-react';
 
 type EventTypeValue =
@@ -42,7 +42,6 @@ type Event = {
   eventDate: string;
   slug: string;
   pixKey: string;
-  guestPasswordHash: string
 };
 
 
@@ -90,13 +89,7 @@ function ErrorState({
           {message}
         </p>
 
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#c4777d] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b66b72] focus:outline-none focus:ring-4 focus:ring-[#b47b7f]/20 sm:w-auto"
-        >
-          Tentar novamente
-        </button>
+        <RetryButton />
       </div>
     </main>
   );
@@ -254,7 +247,7 @@ export default async function PainelEventoPage({
                   <EventTypeIcon type={event.eventType} />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-[#9d646a] sm:text-sm">
+                  <p className="text-xs font-medium text-[#968986]">
                     Tipo de evento
                   </p>
                   <p className="mt-1 break-words text-sm font-semibold text-[#514340]">
@@ -269,7 +262,7 @@ export default async function PainelEventoPage({
                 </div>
 
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-[#9d646a] sm:text-sm">
+                  <p className="text-xs font-medium text-[#968986]">
                     Data do evento
                   </p>
                   <p className="mt-1 break-words text-sm font-semibold capitalize text-[#514340]">
@@ -286,22 +279,6 @@ export default async function PainelEventoPage({
               </p>
 
               <CopyEventLink slug={event.slug} />
-            </div>
-
-            <div className="mt-4 flex min-w-0 items-start gap-3 rounded-xl border border-[#f0e3e3] bg-[#fffaf9] p-3 sm:p-4">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#fff0f1] text-[#b47b7f]">
-                <Lock size={18} />
-              </div>
-
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-[#9d646a] sm:text-sm">
-                  Senha do evento
-                </p>
-                <p className="mt-1 break-words text-sm font-semibold text-[#514340]">
-                  {event.guestPasswordHash}
-                </p>
-                
-              </div>
             </div>
           </div>
         </section>
@@ -328,7 +305,6 @@ export default async function PainelEventoPage({
             initialEventType={event.eventType}
             initialEventDate={eventDateForInput}
             initialPixKey={event.pixKey}
-            initialGuestPassword={event.guestPasswordHash}
           />
         </section>
 

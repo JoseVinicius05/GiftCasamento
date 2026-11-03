@@ -44,7 +44,6 @@ type Props = {
   initialEventType: EventTypeValue;
   initialEventDate: string;
   initialPixKey: string;
-  initialGuestPassword: string ;
 };
 
 const EVENT_ICONS = {
@@ -77,7 +76,6 @@ export default function EditEventForm({
   initialEventType,
   initialEventDate,
   initialPixKey,
-  initialGuestPassword,
 }: Props) {
   const router = useRouter();
 
@@ -86,7 +84,9 @@ export default function EditEventForm({
     useState<EventTypeValue>(initialEventType);
   const [eventDate, setEventDate] = useState(initialEventDate);
   const [pixKey, setPixKey] = useState(initialPixKey);
-  const [guestPasswordHash, setGuestPassword] = useState(initialGuestPassword);
+  // A senha atual não vem mais do servidor. O campo começa vazio e só é
+  // enviada se a pessoa digitar uma nova.
+  const [newGuestPassword, setNewGuestPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -176,7 +176,9 @@ export default function EditEventForm({
           eventType,
           eventDate,
           pixKey: pixKey.trim(),
-          guestPasswordHash,
+          ...(newGuestPassword.trim() && {
+            guestPasswordHash: newGuestPassword.trim(),
+          }),
         }),
       });
 
@@ -197,6 +199,7 @@ export default function EditEventForm({
       }
 
       setSuccess(true);
+      setNewGuestPassword('');
       setIsEditing(false);
       router.refresh();
     } catch {
@@ -248,7 +251,7 @@ export default function EditEventForm({
               setEventType(initialEventType);
               setEventDate(initialEventDate);
               setPixKey(initialPixKey);
-              setGuestPassword(initialGuestPassword);
+              setNewGuestPassword('');
               setError(null);
               setSuccess(false);
               setEventOpen(false);
@@ -766,21 +769,21 @@ export default function EditEventForm({
       <div>
 
         <label
-          htmlFor="title"
+          htmlFor="guestPasswordHash"
           className={labelClass}
         >
-          Senha do evento
+          Nova senha do evento (opcional)
         </label>
 
         <input
           id="guestPasswordHash"
           type="text"
-          value={guestPasswordHash}
+          value={newGuestPassword}
           disabled={!isEditing || loading}
           onChange={(e) =>
-            setGuestPassword(e.target.value)
+            setNewGuestPassword(e.target.value)
           }
-          placeholder="Senha para o evento"
+          placeholder="Deixe em branco para manter a senha atual"
           className="
                   w-full
                   rounded-xl
