@@ -18,6 +18,7 @@ apps/frontend/*.tsbuildinfo
 # nest.js / prisma (apps/backend)
 apps/backend/dist/
 apps/backend/generated/
+apps/backend/*.tsbuildinfo
 
 # testes
 coverage/
