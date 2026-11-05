@@ -176,32 +176,36 @@ export default async function PainelEventoPage({
   }
 
   // Cotas e totais do evento (Sprint 5). Se falhar, o resto do painel continua
-  // funcionando: só a seção "Cotas e pagamentos" mostra o aviso.
-  let contributions: OwnerContribution[] = [];
-  let contributionsSummary: ContributionsSummary | null = null;
-  let contributionsLoadFailed = false;
-
-  try {
-    const [contributionsResponse, summaryResponse] = await Promise.all([
-      fetch(`${apiUrl}/events/${slug}/contributions`, {
+  // funcionando: só a seção "Cotas e pagamentos" mostra o aviso. Cada chamada é
+  // independente (uma falha não derruba a outra) e o motivo real da falha vai
+  // para o log do servidor do Next, em vez de sumir.
+  async function fetchOwnerData<T>(path: string): Promise<T | null> {
+    try {
+      const res = await fetch(`${apiUrl}/events/${slug}/${path}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: 'no-store',
-      }),
-      fetch(`${apiUrl}/events/${slug}/summary`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      }),
-    ]);
+      });
 
-    if (contributionsResponse.ok && summaryResponse.ok) {
-      contributions = await contributionsResponse.json();
-      contributionsSummary = await summaryResponse.json();
-    } else {
-      contributionsLoadFailed = true;
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.error(`[painel] GET /events/${slug}/${path} -> ${res.status} ${body.slice(0, 300)}`);
+        return null;
+      }
+
+      return (await res.json()) as T;
+    } catch (error) {
+      console.error(`[painel] GET /events/${slug}/${path} falhou:`, error);
+      return null;
     }
-  } catch {
-    contributionsLoadFailed = true;
   }
+
+  const [contributionsData, contributionsSummary] = await Promise.all([
+    fetchOwnerData<OwnerContribution[]>('contributions'),
+    fetchOwnerData<ContributionsSummary>('summary'),
+  ]);
+
+  const contributions: OwnerContribution[] = contributionsData ?? [];
+  const contributionsLoadFailed = contributionsData === null || contributionsSummary === null;
 
   const formattedDate = new Date(event.eventDate).toLocaleDateString(
     'pt-BR',
