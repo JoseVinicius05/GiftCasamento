@@ -5,6 +5,8 @@ import EditEventForm from './EditEventForm';
 import AddGiftForm from './AddGiftForm';
 import GiftList from './GiftList';
 import CopyEventLink from './CopyEventLink';
+import type { ContributionsSummary, OwnerContribution } from '../../../lib/contributions';
+import ContributionsPanel from './ContributionsPanel';
 import RetryButton from './RetryButton';
 import type { Gift as GiftType } from '../../../lib/gifts';
 import {
@@ -173,6 +175,34 @@ export default async function PainelEventoPage({
     giftsLoadFailed = true;
   }
 
+  // Cotas e totais do evento (Sprint 5). Se falhar, o resto do painel continua
+  // funcionando: só a seção "Cotas e pagamentos" mostra o aviso.
+  let contributions: OwnerContribution[] = [];
+  let contributionsSummary: ContributionsSummary | null = null;
+  let contributionsLoadFailed = false;
+
+  try {
+    const [contributionsResponse, summaryResponse] = await Promise.all([
+      fetch(`${apiUrl}/events/${slug}/contributions`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      }),
+      fetch(`${apiUrl}/events/${slug}/summary`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      }),
+    ]);
+
+    if (contributionsResponse.ok && summaryResponse.ok) {
+      contributions = await contributionsResponse.json();
+      contributionsSummary = await summaryResponse.json();
+    } else {
+      contributionsLoadFailed = true;
+    }
+  } catch {
+    contributionsLoadFailed = true;
+  }
+
   const formattedDate = new Date(event.eventDate).toLocaleDateString(
     'pt-BR',
     {
@@ -294,6 +324,15 @@ export default async function PainelEventoPage({
             slug={event.slug}
             gifts={gifts}
             loadFailed={giftsLoadFailed}
+          />
+        </section>
+
+        {/* Cotas e pagamentos */}
+        <section className="min-w-0">
+          <ContributionsPanel
+            contributions={contributions}
+            summary={contributionsSummary}
+            loadFailed={contributionsLoadFailed}
           />
         </section>
 

@@ -70,3 +70,10 @@ export function minContributionCents(availableCents: number): number {
 export function isTerminalGiftStatus(status: string): boolean {
   return TERMINAL_STATUSES.has(status);
 }
+
+// Status "de verdade" de uma COTA. Pendente cujo prazo passou já não segura
+// valor (a regra de saldo a ignora), mesmo que o status gravado ainda diga
+// "pending" — não há job que a atualize. Confirmada e expirada ficam como estão.
+export function contributionEffectiveStatus(status: string, expiresAt: Date): string {
+  return status === 'pending' && expiresAt.getTime() <= Date.now() ? 'expired' : status;
+}

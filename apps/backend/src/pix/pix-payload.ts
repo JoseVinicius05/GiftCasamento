@@ -85,6 +85,15 @@ function toEmvText(raw: string, max: number, fallback: string): string {
   return text || fallback;
 }
 
+// ---------- Referência (txid) ----------
+// O "txid" do BR Code: só letras e números, até 25 caracteres. A cota usa o
+// próprio id (sem hífens) — é a REFERÊNCIA que o dono vê no painel pra
+// conciliar com o extrato (nem todo banco mostra o txid, mas quando mostra, bate).
+// Fica aqui para o QR e o painel do dono usarem exatamente a mesma regra.
+export function toPixTxid(raw: string): string {
+  return raw.replace(/[^A-Za-z0-9]/g, '').slice(0, 25);
+}
+
 // ---------- Montagem ----------
 function tlv(id: string, value: string): string {
   return `${id}${String(value.length).padStart(2, '0')}${value}`;
@@ -106,7 +115,7 @@ export function buildPixPayload(input: PixPayloadInput): string | null {
     return null;
   }
 
-  const txid = (input.txid ?? '').replace(/[^A-Za-z0-9]/g, '').slice(0, 25) || '***';
+  const txid = toPixTxid(input.txid ?? '') || '***';
 
   const merchantAccount = tlv('00', 'BR.GOV.BCB.PIX') + tlv('01', key);
 

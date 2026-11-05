@@ -114,6 +114,8 @@ model Contribution {
   // Liga a cota a QUEM a criou sem depender do nome, que é auto-declarado e
   // pode se repetir. Nullable: cotas antigas (se existirem) não têm sessão.
   guestSessionId     String?           @map("guest_session_id")
+  // Linha do fundo extra gerada por esta cota (no máximo uma).
+  extraFund          EventExtraFunds?
 
   @@index([giftId, status])
   @@index([guestSessionId])
@@ -134,6 +136,11 @@ model EventExtraFunds {
   // solta a referência — não faz sentido apagar histórico de saldo extra.
   sourceGift    Gift?    @relation(fields: [sourceGiftId], references: [id], onDelete: SetNull)
   note          String?
+  // Cota que originou esta linha (quando houver). ÚNICA: a mesma cota nunca
+  // vira duas linhas do fundo extra (idempotência da confirmação/"comprei pelo
+  // link") e dá rastreabilidade. Se a cota sumir, o registro contábil fica.
+  contributionId String?       @unique @map("contribution_id")
+  contribution   Contribution? @relation(fields: [contributionId], references: [id], onDelete: SetNull)
   createdAt     DateTime @default(now()) @map("created_at")
 
   @@map("event_extra_funds")

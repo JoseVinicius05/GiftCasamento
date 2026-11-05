@@ -1,6 +1,11 @@
 import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { GuestSession } from '../auth/guest-session.service';
-import { deriveGiftStatus, reservedByGift, toCents } from '../gifts/gift-reservation.util';
+import {
+  contributionEffectiveStatus,
+  deriveGiftStatus,
+  reservedByGift,
+  toCents,
+} from '../gifts/gift-reservation.util';
 import { PrismaService } from '../prisma.service';
 import { buildGuestPayment } from './guest-payment';
 
@@ -8,12 +13,6 @@ import { buildGuestPayment } from './guest-payment';
 // própria sessão (guestSessionId = sid do token). O nome é auto-declarado e
 // pode repetir, então nunca é usado pra decidir "de quem é a cota".
 // Cota de outra sessão é "não encontrada" (404), igual a um id que não existe.
-
-// Cota pendente cujo prazo passou já não segura valor (a regra de saldo a
-// ignora), mesmo que o status gravado ainda diga "pending": é "expired".
-function effectiveStatus(status: string, expiresAt: Date): string {
-  return status === 'pending' && expiresAt.getTime() <= Date.now() ? 'expired' : status;
-}
 
 @Injectable()
 export class GuestMyContributionsService {
@@ -58,7 +57,7 @@ export class GuestMyContributionsService {
       giftTitle: row.gift.title,
       giftImageUrl: row.gift.imageUrl,
       amount: Number(row.amount),
-      status: effectiveStatus(row.status, row.expiresAt),
+      status: contributionEffectiveStatus(row.status, row.expiresAt),
       createdAt: row.createdAt,
       expiresAt: row.expiresAt,
     }));
@@ -97,7 +96,7 @@ export class GuestMyContributionsService {
       throw new NotFoundException('Contribuição não encontrada');
     }
 
-    const status = effectiveStatus(contribution.status, contribution.expiresAt);
+    const status = contributionEffectiveStatus(contribution.status, contribution.expiresAt);
     if (status !== 'pending') {
       throw new ConflictException({
         message:
@@ -150,7 +149,7 @@ export class GuestMyContributionsService {
           where: { id: contributionId },
           select: { status: true, expiresAt: true },
         });
-        const status = contribution ? effectiveStatus(contribution.status, contribution.expiresAt) : 'expired';
+        const status = contribution ? contributionEffectiveStatus(contribution.status, contribution.expiresAt) : 'expired';
 
         if (!contribution || status !== 'pending') {
           throw new ConflictException({

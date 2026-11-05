@@ -94,7 +94,7 @@ Cobrindo:
 
 | Rota | Método | Protegida? | O que faz |
 |---|---|---|---|
-| `/events` | POST | Dono (JWT) | Cria um evento, gera slug único e hash da senha de convidado |
+| `/events` | POST | Dono (JWT) | Cria um evento, gera slug único e grava a senha de convidado (⚠️ hoje em texto puro — ver planejamento, seção 11) |
 | `/events` | GET | Dono (JWT) | Lista só os eventos do dono logado |
 | `/events/:slug` | GET | Dono (JWT) | Dados completos de um evento — 404 se não existir ou não for seu |
 | `/events/:slug` | PATCH | Dono (JWT) | Edita título, tipo, data e/ou chave Pix |
@@ -187,7 +187,7 @@ pela linha de comando (fora do Nest), existe também
 ambiente, ele mostra qual ID foi extraído e o que cada endpoint respondeu.
 
 ## Segurança já implementada
-- Senhas salvas com hash (`bcryptjs`), nunca em texto puro.
+- Senhas de **usuário** salvas com hash (`bcryptjs`). ⚠️ A senha de **convidado** hoje está em texto puro (decisão pendente, `docs/planejamento-mvp.md`, seção 11).
 - Login retorna sempre "E-mail ou senha inválidos", sem revelar se o
   e-mail existe.
 - Sessão via JWT (7 dias), guardado num cookie **httpOnly** setado pelo
@@ -316,3 +316,15 @@ npm install -D @types/qrcode --workspace=apps/frontend
   remoto (`ALLOW_REMOTE_DB_TESTS=1` força, por sua conta e risco). `CONCURRENCY_N=50` aumenta a carga.
 - Antes de ir a produção, siga o **roteiro de validação** do Dia 5 em `docs/planejamento-mvp.md`
   (seção 10).
+
+## Painel de cotas do dono (Sprint 5, Dia 1)
+
+| Rota | Método | Protegida? | O que faz |
+|---|---|---|---|
+| `/events/:slug/contributions?status=` | GET | Dono (JWT) | Cotas do evento (`pending`, `expired` ou `confirmed`; sem `status` = todas), com convidado, presente, valor, datas e **referência** (o `txid` do QR) |
+| `/events/:slug/summary` | GET | Dono (JWT) | Totais: confirmado, pendente, vencido, saldo extra e presentes comprados pelo link |
+
+- O `status` é o **efetivo**: pendente com prazo vencido aparece como `expired`.
+- Evento de outro dono: `404`. Somente leitura; confirmar chega no Dia 2.
+
+**Setup depois de colar o Dia 1:** `cd apps/backend && npx prisma migrate dev`

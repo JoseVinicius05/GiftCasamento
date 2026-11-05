@@ -91,15 +91,20 @@ export class GuestClaimsService {
 
         const confirmed = await tx.contribution.findMany({
           where: { giftId: gift.id, status: 'confirmed' },
-          select: { amount: true, guestDisplayName: true },
+          select: { id: true, amount: true, guestDisplayName: true },
         });
 
         if (confirmed.length > 0) {
           await tx.eventExtraFunds.createMany({
+            // contributionId é ÚNICO: cada cota gera no máximo uma linha, e o
+            // skipDuplicates torna isto idempotente (a mesma cota nunca é
+            // lançada duas vezes no fundo extra).
+            skipDuplicates: true,
             data: confirmed.map((contribution) => ({
               eventId: event.id,
               amount: contribution.amount,
               sourceGiftId: gift.id,
+              contributionId: contribution.id,
               note: `Cota de ${contribution.guestDisplayName} em "${gift.title}" — presente comprado pelo link por ${guest.name}`,
             })),
           });
