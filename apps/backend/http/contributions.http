@@ -1,0 +1,52 @@
+### Extensão "REST Client" do VSCode. Rotas do DONO (Sprint 5): cotas do evento.
+### Rode o bloco "login" primeiro — os demais reaproveitam o token dele.
+### Troque @slug pelo slug de um evento SEU (rode GET /events pra ver). Para ter
+### o que listar, reserve cotas como convidado antes (http/guest.http).
+@baseUrl = http://localhost:3001
+@slug = casamento-ana-joao-x7k2
+
+### 1) Login
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "teste@gmail.com",
+  "password": "12345678"
+}
+
+### 2) Todas as cotas do evento (200: pendentes vivas → vencidas → confirmadas;
+###    cada item com guestName, giftTitle, amount, status EFETIVO e reference)
+GET {{baseUrl}}/events/{{slug}}/contributions
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 3) Só as aguardando pagamento
+GET {{baseUrl}}/events/{{slug}}/contributions?status=pending
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 4) Só as vencidas/canceladas (inclui pendentes com prazo vencido)
+GET {{baseUrl}}/events/{{slug}}/contributions?status=expired
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 5) Só as confirmadas
+GET {{baseUrl}}/events/{{slug}}/contributions?status=confirmed
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 6) Filtro inválido (400 - "status deve ser pending, expired ou confirmed")
+GET {{baseUrl}}/events/{{slug}}/contributions?status=cancelled
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 7) Resumo do evento (200: contributions.{confirmed,pending,expired}, extraFunds, gifts)
+GET {{baseUrl}}/events/{{slug}}/summary
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 8) Sem token (401)
+GET {{baseUrl}}/events/{{slug}}/contributions
+
+### 9) Evento de OUTRO dono ou inexistente (404)
+GET {{baseUrl}}/events/slug-que-nao-existe-123/contributions
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 10) Token de CONVIDADO na rota do dono (401). Cole o accessToken de http/guest.http.
+GET {{baseUrl}}/events/{{slug}}/contributions
+Authorization: Bearer COLE_O_TOKEN_DE_CONVIDADO

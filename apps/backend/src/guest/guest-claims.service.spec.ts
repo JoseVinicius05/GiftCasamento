@@ -43,7 +43,7 @@ describe('GuestClaimsService.claim', () => {
   function setup(
     gift: Record<string, unknown> | null = giftRow(),
     reserved = 0,
-    confirmed: { amount: unknown; guestDisplayName: string }[] = [],
+    confirmed: { id: string; amount: unknown; guestDisplayName: string }[] = [],
   ) {
     order = [];
     tx = {
@@ -165,8 +165,8 @@ describe('GuestClaimsService.claim', () => {
 
     it('presente parcialmente pago: cada cota CONFIRMADA vira uma linha do fundo extra, antes de fechar', async () => {
       setup(giftRow({ status: 'partially_funded' }), 130, [
-        { amount: decimal(100), guestDisplayName: 'João' },
-        { amount: decimal(30), guestDisplayName: 'Paula' },
+        { id: 'c-joao', amount: decimal(100), guestDisplayName: 'João' },
+        { id: 'c-paula', amount: decimal(30), guestDisplayName: 'Paula' },
       ]);
 
       await service.claim('casamento-x', GIFT_ID, GUEST, 'link');
@@ -175,6 +175,9 @@ describe('GuestClaimsService.claim', () => {
       expect(rows).toHaveLength(2);
       expect(rows.map((row: any) => Number(row.amount))).toEqual([100, 30]);
       expect(rows.every((row: any) => row.eventId === 'event-1' && row.sourceGiftId === GIFT_ID)).toBe(true);
+      // Cada linha aponta pra cota de origem (única): idempotente e rastreável.
+      expect(rows.map((row: any) => row.contributionId)).toEqual(['c-joao', 'c-paula']);
+      expect(tx.eventExtraFunds.createMany.mock.calls[0][0].skipDuplicates).toBe(true);
       expect(rows[0].note).toContain('João');
       expect(rows[0].note).toContain('Liquidificador');
       expect(rows[0].note).toContain('Maria Souza');
@@ -182,7 +185,7 @@ describe('GuestClaimsService.claim', () => {
     });
 
     it('só lê as cotas confirmadas deste presente; as pendentes NÃO são tocadas', async () => {
-      setup(giftRow({ status: 'partially_funded' }), 130, [{ amount: decimal(100), guestDisplayName: 'João' }]);
+      setup(giftRow({ status: 'partially_funded' }), 130, [{ id: 'c-joao', amount: decimal(100), guestDisplayName: 'João' }]);
 
       await service.claim('casamento-x', GIFT_ID, GUEST, 'link');
 
@@ -231,7 +234,7 @@ describe('GuestClaimsService.claim', () => {
     });
 
     it('não vaza o fundo extra na resposta do convidado', async () => {
-      setup(giftRow({ status: 'partially_funded' }), 100, [{ amount: decimal(100), guestDisplayName: 'João' }]);
+      setup(giftRow({ status: 'partially_funded' }), 100, [{ id: 'c-joao', amount: decimal(100), guestDisplayName: 'João' }]);
 
       const result = await service.claim('casamento-x', GIFT_ID, GUEST, 'link');
 

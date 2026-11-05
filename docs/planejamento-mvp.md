@@ -1,6 +1,6 @@
 # Sistema de Lista de Presentes por Evento — Planejamento MVP
 
-> **Revisão 9 — Dia 5 da Sprint 4 implementado + planejamento da Sprint 5** (revisão 8: Dia 4).
+> **Revisão 10 — Sprint 5 com decisões confirmadas + Dia 1 implementado** (revisão 9: Dia 5 da Sprint 4 e planejamento da Sprint 5).
 > Tudo que mudou em relação à versão anterior está marcado com **🔄 Alterado** ou **🆕 Novo**.
 > O motivo das mudanças: testes reais contra a API do Mercado Livre mostraram que o
 > `GET /items/{id}` é bloqueado para anúncios de outros vendedores (mesmo com OAuth) e que o
@@ -19,6 +19,7 @@
 | 7 | Sprint 4, Dia 3 | **Presente completo:** `POST …/guest/gifts/:giftId/claim` com `pix` (cota do valor restante, mesma tela de pagamento) ou `link` ("comprei pelo link", fecha o presente); **cotas confirmadas viram linhas do `EventExtraFunds`** na mesma transação; migration `gifts.purchased_via_link_by/at`; dono vê quem comprou pelo link |
 | 8 | Sprint 4, Dia 4 | **"Minhas contribuições":** listar as cotas da própria sessão, **reabrir o Pix** de uma cota pendente e **cancelar** (reaproveita `expired`, sem migration); cancelar recalcula o status do presente sob lock; estados dos cards por motivo (comprado / reservado / garantido); `Esc` volta a fechar o modal de pagamento |
 | 9 | Sprint 4, Dia 5 + Sprint 5 | **Dia 5:** lock da linha do presente no `PATCH` de preço e no `DELETE` (fecha as janelas contra cotas), status **derivado** também na API do dono, **teste de concorrência real** (`npm run test:integration`), rate limit das rotas do convidado **por sessão** (não por IP), testes de controller/DTO de presentes, `ErrorState` corrigido, roteiro de validação em produção. **Sprint 5 detalhada dia a dia (seção 11)** |
+| 10 | Sprint 5, Dia 1 | **Decisões da Sprint 5 confirmadas** (seção 11). **Dia 1:** `GET /events/:slug/contributions` e `GET /events/:slug/summary` (dono), painel **"Cotas e pagamentos"** com resumo, filtros e referência do QR; migration `event_extra_funds.contribution_id` (única) já usada pelo "comprei pelo link". **Desvio detectado no código atual:** senha de convidado em **texto puro** (pendência na seção 11) |
 
 ---
 
@@ -216,7 +217,7 @@ Premissa: 2 pessoas em backend (Nest/Postgres), 2 em frontend (Next.js), com rev
 | 2 | Criação de evento | Evento (slug + senha de convidado), painel do evento | ✅ |
 | 3 | Cadastro de presentes + modelo de cotas | Formulário de presente (metadados + fallback manual), preço-alvo, schema de Contribution/EventExtraFunds | 🔄 Dias 1–4 ✅; Dia 5 (testes de controller/DTO, validação em produção) virou débito da Sprint 4 |
 | 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | ✅ Dias 1–5 no código; falta só o roteiro de validação em produção — ver seção 10 |
-| 5 | Pagamento manual + confirmação + saldo extra | Painel de confirmação, `EventExtraFunds`, e-mail/notificação simples | 📋 detalhada (seção 11) |
+| 5 | Pagamento manual + confirmação + saldo extra | Painel de confirmação, `EventExtraFunds`, e-mail/notificação simples | 🔄 em andamento (Dia 1 ✅) — seção 11 |
 | 6 | Testes, polimento e go-live | Concorrência, UX, bugs, deploy final — **buffer** | — |
 
 A sprint 6 é deliberadamente um buffer, não uma sprint de features novas.
@@ -767,7 +768,7 @@ e é avisado quando chega uma cota. O sistema continua **sem mover dinheiro**: t
 - O QR leva o `txid` = id da cota (sem hífens, 25 caracteres) — serve para conciliar, mas **nem todo banco
   mostra o `txid` no extrato**: a conferência real é por valor, horário e nome do pagador.
 
-### Decisões de desenho propostas (confirmar antes do Dia 2)
+### Decisões de desenho (✅ confirmadas pelo time na revisão 10)
 
 1. **Confirmar cota pendente dentro do prazo** → `confirmed` + `confirmedAt`, na transação com o **mesmo
    lock da linha do presente**; o status gravado do presente é recalculado.
@@ -787,25 +788,38 @@ e é avisado quando chega uma cota. O sistema continua **sem mover dinheiro**: t
    diz o schema). Botão "Marcar como entregue" + "Desfazer"; é o único status terminal que o dono controla.
 8. **Fundo extra é somente leitura no v1** (lista + total + exportar); não existe "marcar como usado".
 9. **Notificação:** indicador no app (contador de cotas pendentes) **primeiro**; e-mail **opcional** atrás
-   de uma chave, e **nunca** bloqueia a reserva (falha de e-mail é só log).
+   de uma chave, e **nunca** bloqueia a reserva (falha de e-mail é só log). *(Interpretação registrada:
+   o time aprovou a proposta como estava — indicador obrigatório; e-mail só liga se houver provedor
+   configurado. Se a intenção era "sem e-mail nesta sprint", basta não configurar a chave.)*
 
-### Dia 1 (Segunda) — Painel de cotas do dono (leitura)
+### Dia 1 (Segunda) — ✅ Implementado — Painel de cotas do dono (leitura)
 
-**Backend** (JWT do dono; evento de outro dono = 404, como todo o módulo)
-- Migration: `event_extra_funds.contribution_id` (única, opcional) — decisão 5.
-- `GET /events/:slug/contributions?status=pending|expired|confirmed`: cotas do evento com presente,
-  nome do convidado, valor, `createdAt`, `expiresAt`, `confirmedAt` e **referência** (o `txid` do QR). O
-  `status` já vem **efetivo** (pendente com prazo vencido = `expired`). Ordem: pendentes vivas (a que vence
-  primeiro no topo) → vencidas → confirmadas.
-- `GET /events/:slug/summary`: confirmado (R$ e nº), pendente vivo, vencido, fundo extra (R$) e nº de
-  presentes comprados pelo link.
-- Testes: ownership, filtro por status e por evento, status efetivo, totais sem dupla contagem.
+**Backend** (JWT do dono; evento de outro dono = 404, como todo o módulo — módulo novo `contributions/`)
+- Migration `20261014100000_add_extra_funds_contribution_id`: `event_extra_funds.contribution_id`
+  (**única**, opcional, FK `ON DELETE SET NULL`) — decisão 5. Já é usada: o "comprei pelo link" (Sprint 4,
+  Dia 3) agora grava a cota de origem em cada linha do fundo extra, com `skipDuplicates` (idempotente).
+- `GET /events/:slug/contributions?status=pending|expired|confirmed`: cotas do evento com nome do
+  convidado, presente, valor, datas e **referência** (o mesmo `txid` do QR, `toPixTxid`, regra única).
+  O `status` é o **efetivo** (pendente com prazo vencido = `expired`) e o filtro também. Ordem: pendentes
+  (a que vence primeiro no topo) → vencidas (mais recentes) → confirmadas (mais recentes). A sessão do
+  convidado nunca sai na resposta. *Sem paginação no v1* (centenas de cotas por evento cabem folgado).
+- `GET /events/:slug/summary`: confirmado / pendente vivo / vencido (R$ e nº, somados em **centavos**, cada
+  cota em um grupo só), fundo extra (R$ e nº de lançamentos) e presentes comprados pelo link.
+- Refactors para a regra viver num lugar só: `contributionEffectiveStatus` (util de saldo, usado também
+  em "Minhas contribuições") e `toPixTxid` (QR e painel).
+- Testes: ownership (404 sem ler nada), filtro e ordem, status efetivo, totais sem dupla contagem,
+  centavos, guards do controller, DTO da query.
 
 **Frontend**
-- Seção **"Cotas"** no painel `/eventos/[slug]`: cartões de resumo + lista com filtros (Pendentes /
-  Vencidas / Confirmadas), referência da cota e contagem regressiva. BFFs GET correspondentes.
+- Seção **"Cotas e pagamentos"** em `/eventos/[slug]` (`ContributionsPanel`): 4 cartões de resumo
+  (confirmado, aguardando, vencidas, saldo extra), filtros com contagem (abre em "Aguardando" se houver),
+  lista com convidado, presente, valor, status, datas em **fuso fixo** (Brasília — sem erro de
+  hidratação), contagem regressiva só depois de montar, e referência com botão de copiar.
+- A página busca cotas e resumo em paralelo; se falhar, só essa seção mostra o aviso.
+- **Sem BFF GET:** a página é um Server Component e já busca direto com o token do dono (como a lista de
+  presentes). Os BFFs desta sprint são só os de ação (POST), a partir do Dia 2.
 
-**Pronto quando:** o dono vê, por evento, quem reservou o quê, o que vence quando e os totais.
+**Pronto quando:** o dono vê, por evento, quem reservou o quê, o que vence quando e os totais. ✔️
 
 ### Dia 2 (Terça) — Confirmar, "Recebi mesmo assim" e rejeitar
 
@@ -845,9 +859,9 @@ tardio nunca estoura o preço do presente.
 ### Dia 4 (Quinta) — Avisos, resumo e exportação
 
 - **Indicador de pendentes:** contador de cotas pendentes vivas por evento (em `GET /events` e no painel).
-- **E-mail ao dono quando entra uma cota** — só se a decisão 2 da lista abaixo for "sim": provedor
+- **E-mail ao dono quando entra uma cota** — **opcional, desligado sem chave** (decisão 2): provedor
   (sugestão: Resend, camada gratuita), `MAIL_API_KEY` / `MAIL_FROM`, envio **fora** da transação e com
-  `catch` (nunca bloqueia a reserva); sem a chave configurada, o recurso fica desligado.
+  `catch` (nunca bloqueia a reserva). O indicador no app é o que garante o aviso.
 - **Exportar CSV** das cotas e do saldo extra (gerado no frontend a partir das listas; sem endpoint novo).
 - Resumo financeiro final no painel e estados vazios/erros amigáveis nas telas novas.
 
@@ -858,12 +872,16 @@ tardio nunca estoura o preço do presente.
   link × cota.
 - Regressão de segurança nas rotas novas (todas com JWT do dono + ownership 404; teste de guards como o
   de `GiftsController`).
-- **Política de rate limit** (decisão 3 abaixo) e o que ficar para a Sprint 6.
+- **Rate limit — opção A aprovada (decisão 3):** `/access` por **slug** (60/min por evento, mais um teto
+  por IP); `preview` do dono por **usuário** (15/min, em vez de por IP); login por **e-mail** (10/min por
+  conta) além do IP. Mesmo padrão do `GuestThrottlerGuard` (tracker próprio). Testes de `getTracker` e de
+  guards nos controllers. Acompanha a pendência da senha de convidado: sem o custo do bcrypt, o limite por
+  evento passa a ser a **única** barreira contra tentativas em massa da senha.
 - Documentação, checklist e retro; **roteiro de validação em produção** da Sprint 5.
 
 ### Checklist de saída da Sprint 5
 
-- [ ] Dono lista as cotas do evento com status efetivo e totais
+- [x] Dono lista as cotas do evento com status efetivo e totais — Dia 1
 - [ ] Dono confirma / rejeita cota; Pix tardio nunca estoura o preço
 - [ ] Compra pelo link com cotas confirmadas → fundo extra sem duplicar linha
 - [ ] Dono reverte "comprei pelo link" e marca presente como entregue (e desfaz)
@@ -882,14 +900,49 @@ tardio nunca estoura o preço do presente.
 - **E-mail:** entregabilidade (SPF/DKIM do remetente) e custo ficam fora do núcleo; é opcional por isso.
 - **Saldo extra é só anotação:** o dinheiro já está na conta do dono; o sistema não controla uso.
 
-### Decisões a confirmar com o time
+### ✅ Decisões confirmadas pelo time (revisão 10)
 
 1. **"Recebi mesmo assim"** para cota vencida: cabendo → confirma no presente; não cabendo → fundo extra
-   (proposta acima, com a migration `contribution_id`). De acordo?
-2. **E-mail ao dono:** entra na Sprint 5 (provedor + chaves) ou só o indicador no app por enquanto?
-3. **Rate limit do `/access` e das rotas do dono** (hoje por IP, que atrás do BFF é o IP do Next).
-   Opções: **(A)** por *slug* no `/access` (ex.: 60/min por evento) e por usuário nas rotas do dono —
-   sem mudança de infraestrutura; **(B)** o BFF repassa o IP real com um segredo compartilhado
-   (nova variável nos dois serviços); **(C)** manter como está. Recomendação: **A**.
-4. **Reverter "comprei pelo link" apaga as linhas do fundo extra** daquele presente (decisão 6): ok?
-5. **Fundo extra somente leitura** no v1 (sem "marcar como usado"): ok?
+   (com a migration `contribution_id`, já feita no Dia 1).
+2. **E-mail ao dono:** indicador no app obrigatório + e-mail opcional por chave (ver interpretação na
+   decisão 9 de desenho).
+3. **Rate limit:** opção **A** (por slug no `/access`, por usuário nas rotas do dono) — Dia 5.
+4. **Reverter "comprei pelo link"** apaga as linhas do fundo extra daquele presente.
+5. **Fundo extra somente leitura** no v1 (sem "marcar como usado").
+
+### ⚠️ Desvio detectado no código atual — senha de convidado em texto puro (**pendência em aberto**)
+
+Ao receber o código atual (zip da revisão 10) apareceu uma mudança **fora deste planejamento** em
+`events.service.ts` / `update-event.dto.ts`: a senha de convidado passou a ser **gravada e comparada em
+texto puro** (`guestPasswordHash: dto.guestPassword`; `password === event.guestPasswordHash`), devolvida
+ao dono em todas as respostas de evento (`guestPasswordHash` entrou em `PUBLIC_EVENT_FIELDS`) e editável
+por um campo novo. A intenção parece ser **o dono poder ver a senha para compartilhar** — necessidade
+legítima. O que isso custa:
+
+- **Vazamento do banco expõe todas as senhas** (e donos costumam reaproveitar senhas). Backups e logs
+  também carregam o texto puro.
+- **Eventos já existentes** (criados com bcrypt) deixam de aceitar a senha certa: o valor gravado é um
+  hash e a comparação agora é `===`. É preciso o dono **redefinir a senha** de cada um.
+- O teste `EventsService › verifyGuestAccess › retorna o id e o título…` **falha** (espera bcrypt); o
+  comentário "nunca inclui guestPasswordHash" ficou falso; o README ainda diz "senhas com hash".
+- Sem o custo do bcrypt, tentar senhas fica mais barato — reforça a decisão 3 (limite por evento).
+
+**Opções** (nenhuma foi aplicada; o código do time foi mantido como veio):
+- **(A) Criptografia reversível** — grava a senha cifrada (AES-256-GCM, chave em variável de ambiente
+  `GUEST_PASSWORD_KEY`), o dono continua vendo a senha, e um vazamento do banco **não** a expõe. Compara
+  com `timingSafeEqual`. Exige a nova variável nos dois ambientes e migrar/redefinir as senhas antigas.
+  **Recomendada** se o dono precisa ver a senha.
+- **(B) Voltar ao bcrypt + "redefinir senha"** — o dono gera/escolhe uma nova senha e ela é mostrada
+  **uma vez** (como fazem os apps de convite). Mais seguro, mas o dono não "revê" a senha depois.
+- **(C) Manter texto puro** — aceitar o risco conscientemente (senha de acesso a uma lista de presentes,
+  não credencial de conta) e ao menos: comparar com `timingSafeEqual`, trocar o nome da coluna/campo
+  (`guestPasswordHash` engana) e atualizar testes/README.
+
+> Pendente: escolher A, B ou C. Até lá a Sprint 5 segue normalmente — nada nas telas novas depende disso.
+
+### Outras diferenças encontradas (informativas)
+
+- Telas do convidado (`GuestGate`, `GiftClaim`, `GiftContribute`, `MyContributions`, `PixPaymentView`,
+  `page.tsx`) e de login/cadastro/meus eventos **redesenhadas** com ícones; novo componente
+  `ExpensiveGiftsCarousel`. A lógica das telas não mudou.
+- `qrcode` / `@types/qrcode` instalados no frontend (necessários desde o Dia 2 da Sprint 4).

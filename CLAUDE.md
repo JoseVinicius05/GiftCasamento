@@ -243,3 +243,19 @@ revisada com isso em mente.
   mudar um guard, o teste acusa.
 - `ErrorState` do painel do dono usa `RetryButton` (componente de cliente): Server Component **não**
   pode receber `onClick`.
+
+### Implementado no Dia 1 da Sprint 5 (painel de cotas do dono)
+- Módulo `contributions/` (DONO, JWT + ownership 404 via `EventsService.findBySlugForOwner`):
+  `GET /events/:slug/contributions?status=` e `GET /events/:slug/summary`. Somente leitura (confirmar /
+  rejeitar chegam no Dia 2). O `status` devolvido é o **efetivo** (`contributionEffectiveStatus`);
+  filtro e totais também usam o efetivo — **nunca** o status gravado da cota.
+- A **referência** da cota é o `txid` do QR (`toPixTxid(id)` em `pix/pix-payload.ts`); painel e QR usam
+  a mesma função. O `guestSessionId` nunca sai nas respostas do dono.
+- Migration `event_extra_funds.contribution_id` (**única**, FK `SET NULL`): cada cota gera no máximo UMA
+  linha do fundo extra. Ao criar linhas do fundo extra sempre preencher `contributionId` e usar
+  `skipDuplicates` (o "comprei pelo link" já faz isso).
+- Frontend: `ContributionsPanel` (client) recebe lista e resumo buscados no Server Component da página;
+  datas em fuso fixo (`formatDateTimeBR`), contagem regressiva só após montar.
+- ⚠️ **Estado atual do código:** a senha de convidado está em **texto puro** (mudança do time fora do
+  plano; ver seção 11 do planejamento, pendência da senha). Não "corrigir" sem decisão: A (cifra reversível),
+  B (bcrypt + redefinir) ou C (manter).
