@@ -46,8 +46,10 @@ function statusOf(reason: any): number {
 
 // Separa os resultados de Promise.allSettled e acusa qualquer erro que não
 // seja um 4xx "esperado" (timeout, deadlock, erro de FK etc. = bug).
-function summarize<T>(results: PromiseSettledResult<T>[], allowedStatuses: number[] = [404, 409]) {
-  const fulfilled = results.filter((r): r is PromiseFulfilledResult<T> => r.status === 'fulfilled');
+// `any`: alguns testes misturam operações de tipos de retorno diferentes no mesmo
+// Promise.allSettled (ex.: remover presente + criar cota), e um T único não se aplica.
+function summarize(results: PromiseSettledResult<any>[], allowedStatuses: number[] = [404, 409]) {
+  const fulfilled = results.filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled');
   const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
   const unexpected = rejected
     .filter((r) => !allowedStatuses.includes(statusOf(r.reason)))
