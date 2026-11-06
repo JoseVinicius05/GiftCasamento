@@ -5,7 +5,7 @@ import { ContributionsController } from './contributions.controller';
 import { ContributionsService } from './contributions.service';
 
 // Cotas vistas pelo DONO (Sprint 5). Dia 1: leitura (lista + resumo).
-// Dia 2: confirmar / rejeitar. Dia 3: fundo extra, presente entregue e
+// Dia 2 (✅): confirmar / rejeitar. Dia 3: fundo extra, presente entregue e
 // reversão da compra pelo link.
 @Module({
   imports: [

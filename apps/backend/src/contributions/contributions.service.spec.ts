@@ -131,6 +131,19 @@ describe('ContributionsService (dono)', () => {
       ]);
     });
 
+    it('inExtraFunds: true só quando o valor da cota já foi lançado no saldo extra', async () => {
+      prisma.contribution.findMany.mockResolvedValue([
+        row({ id: 'a', status: 'expired', extraFund: { id: 'ef-1' } }),
+        row({ id: 'b', status: 'expired' }),
+      ]);
+
+      const result = await service.list('casamento-x', OWNER_ID);
+
+      const byId = Object.fromEntries(result.map((item) => [item.id, item.inExtraFunds]));
+      expect(byId).toEqual({ a: true, b: false });
+      expect(prisma.contribution.findMany.mock.calls[0][0].select.extraFund).toEqual({ select: { id: true } });
+    });
+
     it('evento sem cotas: lista vazia', async () => {
       expect(await service.list('casamento-x', OWNER_ID)).toEqual([]);
     });

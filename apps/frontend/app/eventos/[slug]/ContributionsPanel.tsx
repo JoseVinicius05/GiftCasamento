@@ -1,19 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, Clock3, Copy, HandCoins, PiggyBank, ReceiptText, ShoppingBag } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Check, Clock3, Copy, HandCoins, Loader2, PiggyBank, ReceiptText, ShoppingBag, X } from 'lucide-react';
 import { formatBRL } from '../../../lib/gifts';
 import {
   CONTRIBUTION_STATUS_LABEL,
+  contributionActionError,
   formatDateTimeBR,
+  type ConfirmContributionResult,
   type ContributionsSummary,
   type OwnerContribution,
   type OwnerContributionStatus,
 } from '../../../lib/contributions';
 
-// Painel de cotas do DONO (Sprint 5, Dia 1: somente leitura). Mostra quem
-// reservou o quê, quando vence e a referência pra achar o Pix no extrato.
-// Confirmar/rejeitar chegam no Dia 2.
+// Painel de cotas do DONO. Dia 1: quem reservou o quê, quando vence e a
+// referência pra achar o Pix no extrato. Dia 2: confirmar ("Recebi"),
+// "Recebi mesmo assim" (cota vencida/cancelada) e "Não recebi" — sempre com
+// uma confirmação em cima, porque não existe "desconfirmar" cota.
 
 type Filter = 'all' | OwnerContributionStatus;
 
@@ -86,19 +90,47 @@ function SummaryCard({
   );
 }
 
+type Action = 'confirm' | 'confirm-expired' | 'reject';
+type Feedback = { kind: 'success' | 'error'; text: string };
+
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
+function successMessage(item: OwnerContribution, action: Action, data: unknown): string {
+  const who = `${formatBRL(item.amount)} de ${item.guestName}`;
+
+  if (action === 'reject') {
+    return `Reserva de ${who} encerrada. O valor voltou a ficar disponível no presente.`;
+  }
+
+  const result = data as ConfirmContributionResult;
+  if (result?.outcome === 'extra_funds') {
+    return result.contribution?.status === 'confirmed'
+      ? `Cota de ${who} confirmada. Como o presente já estava fechado, o valor foi para o saldo extra.`
+      : `Pix de ${who} registrado no saldo extra: o presente já estava coberto e o valor não cabia mais nele.`;
+  }
+  return `Cota de ${who} confirmada. O valor já conta no presente.`;
+}
+
 export default function ContributionsPanel({
+  slug,
   contributions,
   summary,
   loadFailed,
 }: {
+  slug: string;
   contributions: OwnerContribution[];
   summary: ContributionsSummary | null;
   loadFailed: boolean;
 }) {
+  const router = useRouter();
   const hasPending = contributions.some((item) => item.status === 'pending');
   const [filter, setFilter] = useState<Filter>(hasPending ? 'pending' : 'all');
+
+  // Uma ação aberta por vez: qual cota e qual ação está pedindo confirmação,
+  // qual está sendo enviada, e o resultado (sucesso/erro) da última.
+  const [asking, setAsking] = useState<{ id: string; action: Action } | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   // O relógio só existe depois que a página carrega no navegador: o servidor e
   // o navegador renderizariam contagens diferentes e dariam erro de hidratação.
@@ -124,7 +156,142 @@ export default function ContributionsPanel({
     return item.status;
   }
 
+  async function runAction(item: OwnerContribution, action: Action) {
+    setBusyId(item.id);
+    setFeedback(null);
+
+    try {
+      const response = await fetch(
+        `/api/events/${encodeURIComponent(slug)}/contributions/${encodeURIComponent(item.id)}/${
+          action === 'reject' ? 'reject' : 'confirm'
+        }`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(action === 'confirm-expired' ? { acceptExpired: true } : {}),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setFeedback({ kind: 'error', text: contributionActionError(response.status, data?.code) });
+        setAsking(null);
+        // Estado mudou por baixo (409/404): atualiza pra mostrar a situação real.
+        if (response.status === 409 || response.status === 404) router.refresh();
+        return;
+      }
+
+      setFeedback({ kind: 'success', text: successMessage(item, action, data) });
+      setAsking(null);
+      router.refresh();
+    } catch {
+      setFeedback({ kind: 'error', text: contributionActionError(502) });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const visible = filter === 'all' ? contributions : contributions.filter((item) => item.status === filter);
+
+  // Botões e confirmação de cada cota. Confirmada (ou com o valor já no saldo
+  // extra) não tem ação: não existe "desconfirmar" na Sprint 5.
+  function renderActions(item: OwnerContribution, status: OwnerContributionStatus) {
+    const busy = busyId === item.id;
+    const current = asking?.id === item.id ? asking.action : null;
+    const who = `${formatBRL(item.amount)} de ${item.guestName}`;
+
+    if (status === 'confirmed') {
+      return item.inExtraFunds ? (
+        <p className="mt-3 flex items-center gap-2 text-xs text-[#827573]">
+          <PiggyBank size={14} className="shrink-0 text-[#b47b7f]" />
+          Este valor está no saldo extra (o presente já estava fechado).
+        </p>
+      ) : null;
+    }
+
+    if (status === 'expired' && item.inExtraFunds) {
+      return (
+        <p className="mt-3 flex items-center gap-2 text-xs text-[#827573]">
+          <PiggyBank size={14} className="shrink-0 text-[#b47b7f]" />
+          Pix recebido depois do prazo: o valor foi para o saldo extra.
+        </p>
+      );
+    }
+
+    if (current) {
+      const copy: Record<Action, { title: string; body: string; yes: string; danger?: boolean }> = {
+        confirm: {
+          title: `Confirmar o recebimento de ${who}?`,
+          body: 'Confira no extrato do banco (valor, horário e nome). Depois de confirmada, a cota não pode ser desfeita.',
+          yes: 'Sim, recebi',
+        },
+        'confirm-expired': {
+          title: `Recebi mesmo assim: ${who}`,
+          body: 'A reserva já tinha vencido. Se o presente ainda comportar o valor, ele entra como confirmado no presente. Se outros convidados já o cobriram (ou ele foi comprado), o valor vai para o saldo extra e o presente não passa do preço.',
+          yes: 'Sim, o Pix caiu',
+        },
+        reject: {
+          title: `Não recebi ${who}?`,
+          body: 'A reserva é encerrada e o valor volta a ficar disponível para outros convidados. Se o Pix cair depois, ainda dá para usar "Recebi mesmo assim".',
+          yes: 'Sim, não recebi',
+          danger: true,
+        },
+      };
+      const text = copy[current];
+
+      return (
+        <div role="group" aria-label={text.title} className="mt-3 rounded-xl border border-[#eadcdc] bg-white p-3.5">
+          <p className="text-sm font-semibold text-[#302b28]">{text.title}</p>
+          <p className="mt-1 text-xs leading-relaxed text-[#827573]">{text.body}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => runAction(item, current)}
+              className={`inline-flex min-h-9 items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold text-white transition focus:outline-none focus:ring-4 focus:ring-[#b47b7f]/20 disabled:opacity-60 ${
+                text.danger ? 'bg-[#9d646a] hover:bg-[#875358]' : 'bg-[#c4777d] hover:bg-[#b0666c]'
+              }`}
+            >
+              {busy && <Loader2 size={14} className="animate-spin" />}
+              {busy ? 'Enviando...' : text.yes}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setAsking(null)}
+              className="inline-flex min-h-9 items-center rounded-full border border-[#e8caca] bg-white px-4 py-1.5 text-sm font-semibold text-[#9d646a] transition hover:bg-[#fff0f1] focus:outline-none focus:ring-4 focus:ring-[#b47b7f]/20 disabled:opacity-60"
+            >
+              Voltar
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const base =
+      'inline-flex min-h-9 items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-[#b47b7f]/20 disabled:opacity-60';
+    const primary = `${base} bg-[#c4777d] text-white hover:bg-[#b0666c]`;
+    const secondary = `${base} border border-[#e8caca] bg-white text-[#9d646a] hover:bg-[#fff0f1]`;
+
+    return (
+      <div className="mt-3 flex flex-wrap gap-2">
+        {status === 'pending' ? (
+          <>
+            <button type="button" disabled={busyId !== null} onClick={() => { setFeedback(null); setAsking({ id: item.id, action: 'confirm' }); }} className={primary}>
+              <Check size={14} /> Recebi
+            </button>
+            <button type="button" disabled={busyId !== null} onClick={() => { setFeedback(null); setAsking({ id: item.id, action: 'reject' }); }} className={secondary}>
+              <X size={14} /> Não recebi
+            </button>
+          </>
+        ) : (
+          <button type="button" disabled={busyId !== null} onClick={() => { setFeedback(null); setAsking({ id: item.id, action: 'confirm-expired' }); }} className={secondary}>
+            <Check size={14} /> Recebi mesmo assim
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <section
@@ -141,7 +308,7 @@ export default function ContributionsPanel({
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-[#827573]">
             Compare o valor, o horário e o nome com o extrato do seu banco; a <strong>referência</strong> é o
-            código que vai no QR Code do Pix. A confirmação do recebimento será liberada em breve.
+            código que vai no QR Code do Pix. Quando o Pix cair na sua conta, toque em <strong>Recebi</strong>.
           </p>
         </div>
       </div>
@@ -149,6 +316,27 @@ export default function ContributionsPanel({
       {loadFailed && (
         <div role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           Não foi possível carregar as cotas agora. Atualize a página em instantes.
+        </div>
+      )}
+
+      {feedback && (
+        <div
+          role={feedback.kind === 'error' ? 'alert' : 'status'}
+          className={`mt-5 flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
+            feedback.kind === 'error'
+              ? 'border-red-200 bg-red-50 text-red-600'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          }`}
+        >
+          <p className="min-w-0 break-words">{feedback.text}</p>
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            aria-label="Fechar aviso"
+            className="shrink-0 rounded-md p-0.5 hover:bg-black/5 focus:outline-none focus:ring-4 focus:ring-[#b47b7f]/20"
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
 
@@ -265,6 +453,8 @@ export default function ContributionsPanel({
                         Referência <CopyReference value={item.reference} />
                       </span>
                     </div>
+
+                    {renderActions(item, status)}
                   </li>
                 );
               })}

@@ -334,6 +334,7 @@ export default async function PainelEventoPage({
         {/* Cotas e pagamentos */}
         <section className="min-w-0">
           <ContributionsPanel
+            slug={event.slug}
             contributions={contributions}
             summary={contributionsSummary}
             loadFailed={contributionsLoadFailed}
