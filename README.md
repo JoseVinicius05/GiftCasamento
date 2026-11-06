@@ -317,14 +317,22 @@ npm install -D @types/qrcode --workspace=apps/frontend
 - Antes de ir a produção, siga o **roteiro de validação** do Dia 5 em `docs/planejamento-mvp.md`
   (seção 10).
 
-## Painel de cotas do dono (Sprint 5, Dia 1)
+## Painel de cotas do dono (Sprint 5, Dias 1–2)
 
 | Rota | Método | Protegida? | O que faz |
 |---|---|---|---|
 | `/events/:slug/contributions?status=` | GET | Dono (JWT) | Cotas do evento (`pending`, `expired` ou `confirmed`; sem `status` = todas), com convidado, presente, valor, datas e **referência** (o `txid` do QR) |
 | `/events/:slug/summary` | GET | Dono (JWT) | Totais: confirmado, pendente, vencido, saldo extra e presentes comprados pelo link |
+| `/events/:slug/contributions/:id/confirm` | POST | Dono (JWT) | **"Recebi"**: confirma a cota. Corpo opcional `{ "acceptExpired": true }` = **"Recebi mesmo assim"** (cota vencida/cancelada). Resposta: `outcome` (`applied` ou `extra_funds`), a cota, `extraFund` e o presente atualizado |
+| `/events/:slug/contributions/:id/reject` | POST | Dono (JWT) | **"Não recebi"**: cota pendente vira `expired` e o valor volta a ficar disponível |
 
 - O `status` é o **efetivo**: pendente com prazo vencido aparece como `expired`.
-- Evento de outro dono: `404`. Somente leitura; confirmar chega no Dia 2.
+- Evento de outro dono (ou cota de outro evento): `404`. Cada item da lista traz `inExtraFunds`.
+- **Regras do confirmar** (sempre sob o lock da linha do presente): pendente no prazo → `confirmed`;
+  vencida/cancelada sem `acceptExpired` → `409 CONTRIBUTION_EXPIRED`; com o flag, se o presente ainda
+  comporta o valor → `confirmed`, senão → valor vai para o **saldo extra** e a cota segue `expired`;
+  presente já comprado pelo link/entregue → cota `confirmed` + valor no saldo extra. Já confirmada ou já
+  lançada no saldo extra → `409 ALREADY_CONFIRMED` (nunca duas linhas). Rejeitar: confirmada →
+  `409 ALREADY_CONFIRMED`; já vencida/cancelada → `409 ALREADY_EXPIRED`. Não existe "desconfirmar".
 
 **Setup depois de colar o Dia 1:** `cd apps/backend && npx prisma migrate dev`

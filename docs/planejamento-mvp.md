@@ -1,6 +1,6 @@
 # Sistema de Lista de Presentes por Evento — Planejamento MVP
 
-> **Revisão 10 — Sprint 5 com decisões confirmadas + Dia 1 implementado** (revisão 9: Dia 5 da Sprint 4 e planejamento da Sprint 5).
+> **Revisão 11 — Sprint 5, Dia 2 implementado** (revisão 10: decisões da Sprint 5 + Dia 1; revisão 9: Dia 5 da Sprint 4 e planejamento da Sprint 5).
 > Tudo que mudou em relação à versão anterior está marcado com **🔄 Alterado** ou **🆕 Novo**.
 > O motivo das mudanças: testes reais contra a API do Mercado Livre mostraram que o
 > `GET /items/{id}` é bloqueado para anúncios de outros vendedores (mesmo com OAuth) e que o
@@ -20,6 +20,7 @@
 | 8 | Sprint 4, Dia 4 | **"Minhas contribuições":** listar as cotas da própria sessão, **reabrir o Pix** de uma cota pendente e **cancelar** (reaproveita `expired`, sem migration); cancelar recalcula o status do presente sob lock; estados dos cards por motivo (comprado / reservado / garantido); `Esc` volta a fechar o modal de pagamento |
 | 9 | Sprint 4, Dia 5 + Sprint 5 | **Dia 5:** lock da linha do presente no `PATCH` de preço e no `DELETE` (fecha as janelas contra cotas), status **derivado** também na API do dono, **teste de concorrência real** (`npm run test:integration`), rate limit das rotas do convidado **por sessão** (não por IP), testes de controller/DTO de presentes, `ErrorState` corrigido, roteiro de validação em produção. **Sprint 5 detalhada dia a dia (seção 11)** |
 | 10 | Sprint 5, Dia 1 | **Decisões da Sprint 5 confirmadas** (seção 11). **Dia 1:** `GET /events/:slug/contributions` e `GET /events/:slug/summary` (dono), painel **"Cotas e pagamentos"** com resumo, filtros e referência do QR; migration `event_extra_funds.contribution_id` (única) já usada pelo "comprei pelo link". **Desvio detectado no código atual:** senha de convidado em **texto puro** (pendência na seção 11) |
+| 11 | Sprint 5, Dia 2 | **Confirmar / rejeitar cotas (dono):** `POST …/contributions/:id/confirm` (`acceptExpired` = "Recebi mesmo assim") e `…/reject`, sob o lock do presente; Pix tardio que não cabe vai para o **fundo extra** e a cota fica `expired`; confirmar em presente já fechado → cota `confirmed` + fundo extra; idempotência por `contribution_id`; a lista do dono ganha `inExtraFunds`; botões com confirmação no painel. Sem migration |
 
 ---
 
@@ -217,7 +218,7 @@ Premissa: 2 pessoas em backend (Nest/Postgres), 2 em frontend (Next.js), com rev
 | 2 | Criação de evento | Evento (slug + senha de convidado), painel do evento | ✅ |
 | 3 | Cadastro de presentes + modelo de cotas | Formulário de presente (metadados + fallback manual), preço-alvo, schema de Contribution/EventExtraFunds | 🔄 Dias 1–4 ✅; Dia 5 (testes de controller/DTO, validação em produção) virou débito da Sprint 4 |
 | 4 | Acesso do convidado + reivindicação (completa e por cota) | Login de evento, nome, reivindicar completo ou cota, reserva atômica e expiração de 48h | ✅ Dias 1–5 no código; falta só o roteiro de validação em produção — ver seção 10 |
-| 5 | Pagamento manual + confirmação + saldo extra | Painel de confirmação, `EventExtraFunds`, e-mail/notificação simples | 🔄 em andamento (Dia 1 ✅) — seção 11 |
+| 5 | Pagamento manual + confirmação + saldo extra | Painel de confirmação, `EventExtraFunds`, e-mail/notificação simples | 🔄 em andamento (Dias 1–2 ✅) — seção 11 |
 | 6 | Testes, polimento e go-live | Concorrência, UX, bugs, deploy final — **buffer** | — |
 
 A sprint 6 é deliberadamente um buffer, não uma sprint de features novas.
@@ -821,7 +822,7 @@ e é avisado quando chega uma cota. O sistema continua **sem mover dinheiro**: t
 
 **Pronto quando:** o dono vê, por evento, quem reservou o quê, o que vence quando e os totais. ✔️
 
-### Dia 2 (Terça) — Confirmar, "Recebi mesmo assim" e rejeitar
+### Dia 2 (Terça) — ✅ Implementado — Confirmar, "Recebi mesmo assim" e rejeitar
 
 **Backend**
 - `POST /events/:slug/contributions/:id/confirm` `{ acceptExpired?: boolean }` e
@@ -838,7 +839,26 @@ e é avisado quando chega uma cota. O sistema continua **sem mover dinheiro**: t
   **"Recebi mesmo assim"** que explica o efeito (entra no presente ou vai para o saldo extra).
 
 **Pronto quando:** o dono confirma uma cota e o presente passa a contar o valor como confirmado; um Pix
-tardio nunca estoura o preço do presente.
+tardio nunca estoura o preço do presente. ✔️
+
+**Como ficou (detalhes de implementação e desvios):**
+- Resposta do `confirm`: `outcome` (`applied` = passou a contar no presente; `extra_funds` = foi para o saldo
+  extra), `contribution { id, status, confirmedAt }`, `extraFund { amount } | null` e o `gift` com status
+  derivado, `reservedAmount` e `availableAmount`. `reject`: `contribution` + `gift`. Ambos `200`.
+- **"Cabe"** = `amount ≤ preço − reservado`, em centavos, com o reservado lido **depois** do lock e **sem** a
+  própria cota (vencida não entra na regra de saldo). Fronteira exata cabe.
+- **Presente fechado** (decisão 4): vale para `purchased_via_link` **e** também `confirmed` (entregue) — o
+  plano só citava o primeiro; um presente entregue não pode receber valor novo, então o dinheiro vai ao saldo
+  extra com nota própria. A cota fica `confirmed` e o presente **não** muda de status.
+- **Idempotência:** cota já `confirmed` **ou** com linha no fundo extra → `409 ALREADY_CONFIRMED` (mesmo com
+  `acceptExpired`); a coluna única `contribution_id` é a rede de segurança contra corrida.
+- `reject`: só `pending` (inclusive a que venceu mas ainda está gravada como pending — sem "rejuvenescer" o
+  prazo). `confirmed` → `409 ALREADY_CONFIRMED`; já `expired` → `409 ALREADY_EXPIRED`.
+- 🆕 `GET /events/:slug/contributions` passou a devolver **`inExtraFunds`** (boolean). Sem isso, depois de um
+  "Recebi mesmo assim" que foi ao saldo extra, a cota (ainda `expired`) continuaria oferecendo o botão.
+- Frontend: confirmação **inline** no card (não `<dialog>`), com o efeito explicado; mensagem de sucesso
+  distinta por resultado; em 409/404 a página é atualizada para mostrar a situação real.
+- Não há "desconfirmar" cota (risco registrado abaixo). Rate limit dessas rotas fica para o Dia 5 (decisão 3).
 
 ### Dia 3 (Quarta) — Presente entregue, reverter compra pelo link e saldo extra
 
@@ -882,8 +902,8 @@ tardio nunca estoura o preço do presente.
 ### Checklist de saída da Sprint 5
 
 - [x] Dono lista as cotas do evento com status efetivo e totais — Dia 1
-- [ ] Dono confirma / rejeita cota; Pix tardio nunca estoura o preço
-- [ ] Compra pelo link com cotas confirmadas → fundo extra sem duplicar linha
+- [x] Dono confirma / rejeita cota; Pix tardio nunca estoura o preço — Dia 2
+- [ ] Compra pelo link com cotas confirmadas → fundo extra sem duplicar linha (parcial: cota confirmada **depois** do link já vai ao fundo extra sem duplicar — Dia 2; falta o teste de concorrência do Dia 5)
 - [ ] Dono reverte "comprei pelo link" e marca presente como entregue (e desfaz)
 - [ ] Tela de saldo extra (lista + total) e exportação CSV
 - [ ] Aviso de cota pendente (indicador; e-mail se aprovado)

@@ -1,4 +1,4 @@
-### Extensão "REST Client" do VSCode. Rotas do DONO (Sprint 5): cotas do evento.
+### Extensão "REST Client" do VSCode. Rotas do DONO (Sprint 5): cotas do evento (Dia 1: leitura; Dia 2: confirmar/rejeitar).
 ### Rode o bloco "login" primeiro — os demais reaproveitam o token dele.
 ### Troque @slug pelo slug de um evento SEU (rode GET /events pra ver). Para ter
 ### o que listar, reserve cotas como convidado antes (http/guest.http).
@@ -50,3 +50,68 @@ Authorization: Bearer {{login.response.body.accessToken}}
 ### 10) Token de CONVIDADO na rota do dono (401). Cole o accessToken de http/guest.http.
 GET {{baseUrl}}/events/{{slug}}/contributions
 Authorization: Bearer COLE_O_TOKEN_DE_CONVIDADO
+
+### ---------------------------------------------------------------------------
+### Dia 2 — confirmar / rejeitar. Pegue um id de cota no bloco 2 e cole em @contributionId.
+### ---------------------------------------------------------------------------
+@contributionId = COLE_O_ID_DA_COTA
+
+### 11) "Recebi": cota PENDENTE dentro do prazo vira confirmed (200: outcome "applied",
+###     contribution, extraFund null e o presente com status/reservado/disponível atualizados)
+POST {{baseUrl}}/events/{{slug}}/contributions/{{contributionId}}/confirm
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+{}
+
+### 12) Confirmar DE NOVO a mesma cota (409 ALREADY_CONFIRMED — idempotente)
+POST {{baseUrl}}/events/{{slug}}/contributions/{{contributionId}}/confirm
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+{}
+
+### 13) Cota VENCIDA/cancelada SEM o flag (409 CONTRIBUTION_EXPIRED)
+###     (para testar: ajuste expires_at no banco para o passado, ou rejeite/cancele uma cota antes)
+POST {{baseUrl}}/events/{{slug}}/contributions/{{contributionId}}/confirm
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+{}
+
+### 14) "Recebi mesmo assim" (200). Cabendo no presente: outcome "applied", cota confirmed.
+###     Não cabendo (ou presente comprado pelo link): outcome "extra_funds", extraFund { amount }
+###     (a cota fica expired se não coube; confirmed se o presente já estava fechado)
+POST {{baseUrl}}/events/{{slug}}/contributions/{{contributionId}}/confirm
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+{ "acceptExpired": true }
+
+### 15) acceptExpired que não é booleano (400)
+POST {{baseUrl}}/events/{{slug}}/contributions/{{contributionId}}/confirm
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+{ "acceptExpired": "true" }
+
+### 16) "Não recebi": cota pendente vira expired e o valor volta (200: contribution + gift)
+POST {{baseUrl}}/events/{{slug}}/contributions/{{contributionId}}/reject
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 17) Rejeitar cota já confirmada (409 ALREADY_CONFIRMED) ou já vencida/cancelada (409 ALREADY_EXPIRED)
+POST {{baseUrl}}/events/{{slug}}/contributions/{{contributionId}}/reject
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### 18) Id que não é UUID (400) e cota de OUTRO evento / inexistente (404)
+POST {{baseUrl}}/events/{{slug}}/contributions/nao-e-uuid/confirm
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+{}
+
+### 19) Sem token (401)
+POST {{baseUrl}}/events/{{slug}}/contributions/{{contributionId}}/confirm
+Content-Type: application/json
+
+{}

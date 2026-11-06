@@ -1,6 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { EventsService } from '../events/events.service';
-import { contributionEffectiveStatus, toCents } from '../gifts/gift-reservation.util';
+import {
+  contributionEffectiveStatus,
+  deriveGiftStatus,
+  isTerminalGiftStatus,
+  reservedByGift,
+  toCents,
+} from '../gifts/gift-reservation.util';
 import { PrismaService } from '../prisma.service';
 import { toPixTxid } from '../pix/pix-payload';
 import type { ContributionFilter } from './dto/list-contributions-query.dto';
@@ -14,8 +20,13 @@ function bucket() {
   return { count: 0, cents: 0 };
 }
 
-// Visão do DONO sobre as cotas do evento (somente leitura — Sprint 5, Dia 1).
-// Confirmar/rejeitar chegam no Dia 2.
+// Visão do DONO sobre as cotas do evento. Dia 1: leitura (lista + resumo).
+// Dia 2: confirmar ("Recebi" / "Recebi mesmo assim") e rejeitar ("Não recebi").
+//
+// Toda escrita segue o mesmo padrão das cotas do convidado: ownership (404) →
+// transação → TRAVA a linha do presente → RELÊ a cota → decide → grava. A
+// trava é a mesma de criar cota, "comprei pelo link" e cancelar: nenhuma
+// dessas operações roda ao mesmo tempo no mesmo presente.
 @Injectable()
 export class ContributionsService {
   constructor(
@@ -41,6 +52,9 @@ export class ContributionsService {
         expiresAt: true,
         confirmedAt: true,
         gift: { select: { title: true, imageUrl: true } },
+        // Só o id: serve para saber se o valor desta cota já foi lançado no
+        // fundo extra (e, com isso, não oferecer confirmar de novo).
+        extraFund: { select: { id: true } },
       },
     });
 
@@ -59,6 +73,9 @@ export class ContributionsService {
       createdAt: row.createdAt as Date,
       expiresAt: row.expiresAt as Date,
       confirmedAt: (row.confirmedAt ?? null) as Date | null,
+      // true = o valor desta cota está no saldo extra (Pix tardio que não cabia
+      // no presente, ou cota confirmada num presente já comprado pelo link).
+      inExtraFunds: Boolean(row.extraFund),
     }));
 
     const filtered = status ? items.filter((item) => item.status === status) : items;
@@ -123,5 +140,265 @@ export class ContributionsService {
       },
       gifts: { total: giftsTotal, purchasedViaLink: giftsPurchasedViaLink },
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Dia 2 — confirmar / rejeitar
+  // ---------------------------------------------------------------------------
+
+  // Acha a cota DO EVENTO do dono (nunca de outro) e devolve o presente a travar.
+  private async findOwnContribution(tx: any, eventId: string, contributionId: string) {
+    const mine = await tx.contribution.findFirst({
+      where: { id: contributionId, gift: { eventId } },
+      select: { giftId: true },
+    });
+    if (!mine) {
+      throw new NotFoundException('Cota não encontrada');
+    }
+    return mine.giftId as string;
+  }
+
+  // "Recebi": o dono confirma que o Pix caiu.
+  //
+  //  1. pendente DENTRO do prazo → confirmed + confirmedAt; o presente passa a
+  //     contar o valor como confirmado.
+  //  2. vencida/cancelada → exige `acceptExpired` (409 CONTRIBUTION_EXPIRED sem
+  //     ele). Se o presente AINDA comporta o valor → vira confirmed e conta nele;
+  //     se NÃO comporta (outros já cobriram, ou foi comprado) → o valor vai para
+  //     o fundo extra e a cota continua `expired`. Um Pix tardio nunca estoura o
+  //     preço do presente.
+  //  3. presente já comprado pelo link (ou entregue) → a cota vira confirmed e o
+  //     valor vai para o fundo extra, na mesma transação.
+  //
+  // Idempotente: a cota que já está confirmed, ou cujo valor já foi lançado no
+  // fundo extra, responde 409 ALREADY_CONFIRMED — e `contribution_id` é único,
+  // então nem uma corrida consegue gerar duas linhas do fundo extra.
+  async confirm(slug: string, ownerId: string, contributionId: string, acceptExpired = false) {
+    const event = await this.eventsService.findBySlugForOwner(slug, ownerId);
+
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        // 1) Descobre o presente a travar (só se a cota for deste evento).
+        const giftId = await this.findOwnContribution(tx, event.id, contributionId);
+
+        // 2) Trava e SÓ DEPOIS relê: entre o passo 1 e o lock, a cota pode ter
+        //    mudado (o convidado cancelou, o dono confirmou em outra aba...).
+        await tx.$queryRaw`SELECT "id" FROM "gifts" WHERE "id" = ${giftId} AND "event_id" = ${event.id} FOR UPDATE`;
+
+        const contribution = await tx.contribution.findUnique({
+          where: { id: contributionId },
+          select: {
+            id: true,
+            amount: true,
+            status: true,
+            expiresAt: true,
+            guestDisplayName: true,
+            extraFund: { select: { id: true } },
+          },
+        });
+        if (!contribution) {
+          throw new NotFoundException('Cota não encontrada');
+        }
+
+        const effective = contributionEffectiveStatus(contribution.status, contribution.expiresAt);
+
+        if (effective === 'confirmed' || contribution.extraFund) {
+          throw new ConflictException({
+            message:
+              effective === 'confirmed'
+                ? 'Esta cota já foi confirmada.'
+                : 'O valor desta cota já foi lançado no saldo extra.',
+            code: 'ALREADY_CONFIRMED',
+          });
+        }
+
+        if (effective === 'expired' && !acceptExpired) {
+          throw new ConflictException({
+            message:
+              'Esta reserva venceu ou foi cancelada. Se o Pix caiu mesmo assim, confirme com "Recebi mesmo assim".',
+            code: 'CONTRIBUTION_EXPIRED',
+          });
+        }
+
+        const gift = await tx.gift.findUnique({ where: { id: giftId } });
+        if (!gift) {
+          throw new NotFoundException('Presente não encontrado');
+        }
+
+        const amountCents = toCents(contribution.amount);
+        const now = new Date();
+
+        // Decide para onde o dinheiro vai.
+        //  - presente fechado (comprado pelo link / entregue): fundo extra e a cota fica confirmed;
+        //  - vencida e o valor não cabe mais: fundo extra e a cota segue expired;
+        //  - senão: entra no presente.
+        let toExtraFunds = false;
+        let finalStatus: 'confirmed' | 'expired' = 'confirmed';
+
+        if (isTerminalGiftStatus(gift.status)) {
+          toExtraFunds = true;
+        } else if (effective === 'expired') {
+          // Cota vencida não entra no reservado (a regra de saldo a ignora), então
+          // o disponível já é o que sobra SEM ela.
+          const reservedCents = toCents((await reservedByGift(tx, [gift.id])).get(gift.id) ?? 0);
+          const availableCents = Math.max(0, toCents(gift.price) - reservedCents);
+          if (amountCents > availableCents) {
+            toExtraFunds = true;
+            finalStatus = 'expired';
+          }
+        }
+
+        if (finalStatus === 'confirmed') {
+          await tx.contribution.update({
+            where: { id: contributionId },
+            data: { status: 'confirmed', confirmedAt: now },
+          });
+        }
+
+        if (toExtraFunds) {
+          await tx.eventExtraFunds.create({
+            data: {
+              eventId: event.id,
+              amount: contribution.amount,
+              sourceGiftId: gift.id,
+              contributionId: contribution.id,
+              note: this.extraFundNote(contribution.guestDisplayName, gift, effective === 'expired'),
+            },
+          });
+        }
+
+        // Recalcula o status GRAVADO do presente sobre o saldo já com a decisão
+        // aplicada (terminais nunca mudam aqui — deriveGiftStatus os preserva).
+        const reserved = (await reservedByGift(tx, [gift.id])).get(gift.id) ?? 0;
+        const giftStatus = deriveGiftStatus(gift.status, gift.price, reserved);
+        if (giftStatus !== gift.status) {
+          await tx.gift.update({ where: { id: gift.id }, data: { status: giftStatus as any } });
+        }
+
+        const availableCents = Math.max(0, toCents(gift.price) - toCents(reserved));
+        return {
+          gift,
+          giftStatus,
+          reserved,
+          availableCents,
+          finalStatus,
+          toExtraFunds,
+          amount: Number(contribution.amount),
+          confirmedAt: finalStatus === 'confirmed' ? now : null,
+        };
+      },
+      { maxWait: 5_000, timeout: 10_000 },
+    );
+
+    return {
+      // applied = o valor passou a contar no presente; extra_funds = foi para o saldo extra.
+      outcome: result.toExtraFunds ? ('extra_funds' as const) : ('applied' as const),
+      contribution: {
+        id: contributionId,
+        status: result.finalStatus,
+        confirmedAt: result.confirmedAt,
+      },
+      extraFund: result.toExtraFunds ? { amount: result.amount } : null,
+      gift: {
+        id: result.gift.id,
+        title: result.gift.title,
+        status: result.giftStatus,
+        reservedAmount: result.reserved,
+        availableAmount: result.availableCents / 100,
+      },
+    };
+  }
+
+  // "Não recebi": a cota pendente vira `expired` na hora (reaproveita `expired`,
+  // como o cancelamento do convidado) e o valor volta a ficar disponível.
+  //
+  // Já confirmada → 409 ALREADY_CONFIRMED (não existe "desconfirmar" na Sprint 5).
+  // Já expirada/cancelada → 409 ALREADY_EXPIRED. Pendente com prazo vencido, mas
+  // ainda gravada como pending, é encerrada normalmente (só arruma o registro).
+  async reject(slug: string, ownerId: string, contributionId: string) {
+    const event = await this.eventsService.findBySlugForOwner(slug, ownerId);
+
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        const giftId = await this.findOwnContribution(tx, event.id, contributionId);
+
+        await tx.$queryRaw`SELECT "id" FROM "gifts" WHERE "id" = ${giftId} AND "event_id" = ${event.id} FOR UPDATE`;
+
+        const contribution = await tx.contribution.findUnique({
+          where: { id: contributionId },
+          select: { status: true, expiresAt: true },
+        });
+        if (!contribution) {
+          throw new NotFoundException('Cota não encontrada');
+        }
+
+        if (contribution.status === 'confirmed') {
+          throw new ConflictException({
+            message: 'Esta cota já foi confirmada e não pode ser rejeitada.',
+            code: 'ALREADY_CONFIRMED',
+          });
+        }
+        if (contribution.status !== 'pending') {
+          throw new ConflictException({
+            message: 'Esta cota já está vencida ou cancelada.',
+            code: 'ALREADY_EXPIRED',
+          });
+        }
+
+        // Não "rejuvenesce" o prazo: se já passou, mantém; se não, encerra agora.
+        const now = new Date();
+        await tx.contribution.update({
+          where: { id: contributionId },
+          data: {
+            status: 'expired',
+            expiresAt: contribution.expiresAt.getTime() > now.getTime() ? now : contribution.expiresAt,
+          },
+        });
+
+        const gift = await tx.gift.findUnique({ where: { id: giftId } });
+        if (!gift) {
+          throw new NotFoundException('Presente não encontrado');
+        }
+
+        const reserved = (await reservedByGift(tx, [gift.id])).get(gift.id) ?? 0;
+        const giftStatus = deriveGiftStatus(gift.status, gift.price, reserved);
+        if (giftStatus !== gift.status) {
+          await tx.gift.update({ where: { id: gift.id }, data: { status: giftStatus as any } });
+        }
+
+        const availableCents = Math.max(0, toCents(gift.price) - toCents(reserved));
+        return { gift, giftStatus, reserved, availableCents };
+      },
+      { maxWait: 5_000, timeout: 10_000 },
+    );
+
+    return {
+      contribution: { id: contributionId, status: 'expired' as const },
+      gift: {
+        id: result.gift.id,
+        title: result.gift.title,
+        status: result.giftStatus,
+        reservedAmount: result.reserved,
+        availableAmount: result.availableCents / 100,
+      },
+    };
+  }
+
+  // Nota que o dono lê no saldo extra: de quem é o valor e por que está lá.
+  private extraFundNote(
+    guestName: string,
+    gift: { title: string; status: string; purchasedViaLinkBy?: string | null },
+    wasExpired: boolean,
+  ): string {
+    const base = `Cota de ${guestName} em "${gift.title}"`;
+    if (isTerminalGiftStatus(gift.status)) {
+      const buyer = gift.purchasedViaLinkBy ? ` por ${gift.purchasedViaLinkBy}` : '';
+      return gift.status === 'purchased_via_link'
+        ? `${base} — confirmada depois que o presente foi comprado pelo link${buyer}`
+        : `${base} — confirmada depois que o presente foi entregue`;
+    }
+    return wasExpired
+      ? `${base} — Pix recebido após o vencimento, quando o presente já estava coberto`
+      : base;
   }
 }

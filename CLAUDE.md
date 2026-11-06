@@ -246,8 +246,8 @@ revisada com isso em mente.
 
 ### Implementado no Dia 1 da Sprint 5 (painel de cotas do dono)
 - Módulo `contributions/` (DONO, JWT + ownership 404 via `EventsService.findBySlugForOwner`):
-  `GET /events/:slug/contributions?status=` e `GET /events/:slug/summary`. Somente leitura (confirmar /
-  rejeitar chegam no Dia 2). O `status` devolvido é o **efetivo** (`contributionEffectiveStatus`);
+  `GET /events/:slug/contributions?status=` e `GET /events/:slug/summary` (leitura, Dia 1) e
+  `POST …/contributions/:id/confirm` / `…/reject` (Dia 2). O `status` devolvido é o **efetivo** (`contributionEffectiveStatus`);
   filtro e totais também usam o efetivo — **nunca** o status gravado da cota.
 - A **referência** da cota é o `txid` do QR (`toPixTxid(id)` em `pix/pix-payload.ts`); painel e QR usam
   a mesma função. O `guestSessionId` nunca sai nas respostas do dono.
@@ -259,3 +259,20 @@ revisada com isso em mente.
 - ⚠️ **Estado atual do código:** a senha de convidado está em **texto puro** (mudança do time fora do
   plano; ver seção 11 do planejamento, pendência da senha). Não "corrigir" sem decisão: A (cifra reversível),
   B (bcrypt + redefinir) ou C (manter).
+
+### Implementado no Dia 2 da Sprint 5 (confirmar, "Recebi mesmo assim" e rejeitar)
+- `ContributionsService.confirm/reject`: ownership 404 **antes** de abrir a transação → acha a cota
+  **dentro do evento do dono** → **trava a linha do presente** (`SELECT … FOR UPDATE`, mesmo lock de cota,
+  "comprei pelo link" e cancelar) → **relê** a cota → decide → grava → recalcula o status gravado do presente
+  (`deriveGiftStatus`; terminais nunca mudam). Nunca decidir lendo a cota antes do lock.
+- Decisões: pendente no prazo → `confirmed`; vencida/cancelada exige `acceptExpired: true` (senão 409
+  `CONTRIBUTION_EXPIRED`); com o flag, **cabendo** (preço − reservado SEM ela) → `confirmed`, **não cabendo**
+  → `EventExtraFunds` e a cota fica `expired`; presente `purchased_via_link`/`confirmed` → cota `confirmed` +
+  fundo extra. Toda linha do fundo extra leva `contributionId` (único): confirmar duas vezes → 409
+  `ALREADY_CONFIRMED`, nunca duas linhas. Rejeitar = `expired` (reaproveita o status, sem migration).
+- A lista do dono agora devolve `inExtraFunds` (para não oferecer confirmar de novo o que já foi pro saldo extra).
+- Frontend: `ContributionsPanel` recebe `slug`; botões Recebi / Não recebi (pendentes) e Recebi mesmo assim
+  (vencidas), **sempre com confirmação inline**; BFFs `POST /api/events/[slug]/contributions/[id]/confirm|reject`
+  (usam `proxyToBackend`, token do dono; só repassam `acceptExpired === true`).
+- Sem migration neste dia. Testes: `contributions.confirm.service.spec.ts`, `confirm-contribution.dto.spec.ts`
+  e casos novos no spec do controller. A concorrência real (confirmar × cancelar × reservar × link) é o Dia 5.
